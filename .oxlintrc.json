@@ -1,0 +1,22 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "oxc", "import", "promise"],
+  "categories": { "correctness": "error" },
+  "rules": {
+    "eslint/eqeqeq": "error",
+    "typescript/await-thenable": "error",
+    "typescript/no-floating-promises": "error",
+    "typescript/no-misused-promises": "error",
+    "typescript/no-unnecessary-type-assertion": "error",
+    "typescript/switch-exhaustiveness-check": "error"
+  },
+  "ignorePatterns": ["dist/**"],
+  "overrides": [
+    {
+      "files": ["test/**"],
+      "rules": {
+        "typescript/await-thenable": "off"
+      }
+    }
+  ]
+}
