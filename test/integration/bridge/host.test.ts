@@ -3,7 +3,7 @@
 // runs the shared host; Ardia's has no relay.
 import { afterEach, expect, test } from "bun:test";
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -76,5 +76,25 @@ test("a pi that doesn't exit when the browser disconnects is killed", async () =
   } finally {
     delete process.env.FAKE_PI_LAUNCH_LOG;
     delete process.env.FAKE_PI_IGNORE_EOF;
+  }
+});
+
+test("disconnecting while pi is still starting exits cleanly and stops pi", async () => {
+  const log = join(homedir(), "starting-pi-launch.json");
+  process.env.FAKE_PI_LAUNCH_LOG = log;
+  process.env.FAKE_PI_STALL = "1";
+  try {
+    const events = startBridge();
+    bridge.stdin.write(frame({ type: "start", piPath: FAKE_PI }));
+    await waitFor(() => expect(existsSync(log)).toBe(true), 10_000);
+    const { pid } = JSON.parse(readFileSync(log, "utf8")) as { pid: number };
+    const exited = new Promise<number | null>((done) => bridge.on("exit", done));
+    bridge.stdin.end();
+    expect(await exited).toBe(0);
+    expect(events.map((e) => e.type)).not.toContain("fatal");
+    await waitFor(() => expect(() => process.kill(pid, 0)).toThrow());
+  } finally {
+    delete process.env.FAKE_PI_LAUNCH_LOG;
+    delete process.env.FAKE_PI_STALL;
   }
 });

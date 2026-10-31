@@ -6,7 +6,8 @@
 //
 // FAKE_PI_WRONG_SESSION=1 makes it report a session other than the one it
 // was asked to open. FAKE_PI_IGNORE_EOF=1 makes it keep running after its
-// stdin closes, like a pi stuck in a tool call.
+// stdin closes, like a pi stuck in a tool call. FAKE_PI_STALL=1 makes it
+// never answer, like a pi still starting up.
 
 import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -114,6 +115,7 @@ process.stdin.on("data", (chunk: string) => {
   for (let end = buffer.indexOf("\n"); end >= 0; end = buffer.indexOf("\n")) {
     const command = JSON.parse(buffer.slice(0, end));
     buffer = buffer.slice(end + 1);
+    if (process.env.FAKE_PI_STALL) continue;
     if (command.type === "prompt" && command.message === "reject:busy") {
       send({ type: "response", id: command.id, command: command.type, success: false, error: "Agent is already streaming. Specify streamingBehavior to queue a message." });
     } else send({ type: "response", id: command.id, command: command.type, success: true, data: handle(command) });

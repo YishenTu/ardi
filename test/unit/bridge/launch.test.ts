@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
@@ -37,6 +37,10 @@ describe("piCommand", () => {
 const TARGET = { extension: "/dist/test/agent/extension", tools: ["list_tabs", "browser_exec"] };
 
 describe("buildPiLaunchSpec", () => {
+  // Not whatever pi is on the developer's PATH: on Windows, an npm pi.cmd
+  // there would put its script ahead of pi's arguments.
+  beforeEach(() => { process.env.ARDI_PI_BIN = join(homedir(), "pi"); });
+
   test("runs pi in RPC mode in ~/.ardi, isolated from the user's own pi setup except AGENTS.md", () => {
     const spec = buildPiLaunchSpec(TARGET);
     expect(spec.cwd).toBe(join(homedir(), ".ardi"));
