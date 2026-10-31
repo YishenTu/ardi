@@ -58,7 +58,7 @@ In Ardia, open **Settings → Extensions → Add extensions → Load unpacked ex
 | What | Where |
 | --- | --- |
 | **Prompt** | `src/agent/system-prompt.md` is Pi's entire system prompt. |
-| **Tools** | Ardia tools are in `src/agent/extension/ardia.ts`; Chrome tools are in `src/agent/extension/chrome-tools.ts`. |
+| **Tools** | Ardia tools are in `src/targets/ardia/agent/extension/`; Chrome tools are in `src/targets/chrome/agent/extension/`. |
 | **Your instructions** | Write them in `~/.ardi/AGENTS.md`; they apply from your next new chat. |
 | **Skills** | Drop them in `~/.ardi/.agents/skills/`; they show up in your next new chat. |
 | **Which Pi** | Set the Pi CLI path in Settings (the sliders button); leave it empty to use the Pi `host:install` found. |

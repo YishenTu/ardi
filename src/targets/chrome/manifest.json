@@ -1,0 +1,5 @@
+{
+  "name": "Ardi for Chrome",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAy95ISmcpM1d9KEoGdOVjyWZu9xP2ztDBKDET006PLEgpJFSgJ++f1Q1WVjCGcKzqPsCESU/u8iH+Fz+97xyPt1V7Xj7bNMp4Kf2B30GTeIKj9gkqIMlkwYOQ//+ss0bNGnrUWx/Hl1yEVHaIkrpGRvzvW6Dh+CecdGTd6QbXvfoGtbk4xT9OM4myhjvG6OlDQcVF6cTB7W/rRBA96JWbTGQmyrbnghaYV6HE5WiPFlzM+sQfBIXpyUaXvGMajAS9d5bxul/tInF2LCfjiZMdw3slxVodqVeamYMdHmgIRlV7V7ryWJXa7yR7WRVILAERoZhtPsvvDHbdGf2ispfWOQIDAQAB",
+  "permissions": ["debugger"]
+}

@@ -28,7 +28,7 @@ afterEach(() => {
 function startSession(sessionFile?: string): PiSession {
   // Each session reports into its own list, so a finished one can't leak in.
   const own: BridgeEvent[] = (events = []);
-  session = new PiSession((event) => own.push(event));
+  session = new PiSession({ extension: "/agent/extension", tools: [] }, (event) => own.push(event));
   session.start(sessionFile, FAKE_PI);
   return session;
 }

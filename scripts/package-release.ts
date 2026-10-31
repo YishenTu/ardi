@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -10,7 +10,7 @@ const buildDir = resolve(process.env.ARDI_BUILD_DIR || join(root, "dist"));
 const releaseDir = resolve(process.env.ARDI_RELEASE_DIR || root);
 mkdirSync(releaseDir, { recursive: true });
 const checksums: string[] = [];
-for (const target of ["ardia", "chrome"]) {
+for (const target of readdirSync(join(root, "src/targets"), { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name)) {
   const manifest = JSON.parse(readFileSync(join(buildDir, target, "manifest.json"), "utf8")) as { version: string };
   if (manifest.version !== version) throw new Error("package.json and manifest versions must match before releasing.");
   const staging = mkdtempSync(join(tmpdir(), "ardi-release-"));

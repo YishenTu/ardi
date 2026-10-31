@@ -5,7 +5,6 @@ import { existsSync, mkdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { BUILD_TARGET } from "../build-target";
 import type { PiCheck } from "./protocol";
 
 // pi always runs here. Its sessions are stored per working folder, so a
@@ -16,13 +15,20 @@ export const WORK_DIR = join(homedir(), ".ardi");
 // (~/.agents/skills, ~/.pi/agent/skills) stay out.
 export const SKILLS_DIR = join(WORK_DIR, ".agents", "skills");
 
-// Ardi's agent setup, versioned in this repo under src/agent/ and copied
-// into dist/<target>/agent/ by the build; the bridge uses the copy next to it.
-const AGENT_DIR = resolve(import.meta.dirname, "../agent");
+// Pi's shared system prompt: src/agent/ from source, the copy in
+// dist/<target>/agent/ when built.
+const SYSTEM_PROMPT = resolve(import.meta.dirname, "../agent/system-prompt.md");
 
-// Every built-in tool plus Ardi's browser tools. Named explicitly so the
-// user's own pi `defaultTools` setting doesn't change what Ardi gets.
-const TOOLS = ["read", "bash", "edit", "write", "grep", "find", "ls", "codemode", "list_tabs", "read_tab", "view_image", "open_tab"];
+// Every built-in tool. Named explicitly, with the target's browser tools, so
+// the user's own pi `defaultTools` setting doesn't change what Ardi gets.
+const TOOLS = ["read", "bash", "edit", "write", "grep", "find", "ls", "codemode"];
+
+// What one browser target adds to pi: its extension directory (pi loads its
+// index.ts from source, the bundled index.js from dist) and the tools it registers.
+export interface PiTarget {
+  extension: string;
+  tools: readonly string[];
+}
 
 export interface PiLaunchSpec {
   command: string;
@@ -30,20 +36,20 @@ export interface PiLaunchSpec {
   cwd: string;
 }
 
-// pi runs isolated from the user's own pi setup: only Ardi's prompt,
-// extension, tool list and skills; no global extensions, skills or prompt
+// pi runs isolated from the user's own pi setup: only Ardi's prompt, the
+// target's extension, the tool list and Ardi's skills; no global extensions, skills or prompt
 // templates. AGENTS.md files load the way pi normally does it (its agent
 // folder, the working folder and its parents), so ~/.ardi/AGENTS.md holds the
 // user's instructions for Ardi.
 // `sessionFile`: resume that session; omitted = pi starts a new one.
 // `piPath`: the user's pi from Settings; omitted = the installed pi.
-export function buildPiLaunchSpec(sessionFile?: string, piPath?: string): PiLaunchSpec {
+export function buildPiLaunchSpec(target: PiTarget, sessionFile?: string, piPath?: string): PiLaunchSpec {
   const args = [
     "--mode", "rpc",
-    "--system-prompt", join(AGENT_DIR, "system-prompt.md"),
+    "--system-prompt", SYSTEM_PROMPT,
     "--no-extensions",
-    "--extension", join(AGENT_DIR, "extension", BUILD_TARGET === "chrome" ? "chrome.ts" : "ardia.ts"),
-    "--tools", [...TOOLS, BUILD_TARGET === "chrome" ? "browser_exec" : "ardia_exec"].join(","),
+    "--extension", target.extension,
+    "--tools", [...TOOLS, ...target.tools].join(","),
     "--no-skills",
     "--skill", SKILLS_DIR,
     "--no-prompt-templates",

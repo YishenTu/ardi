@@ -1,8 +1,11 @@
-import { describe, expect, test } from "bun:test";
+import { beforeEach, describe, expect, test } from "bun:test";
 
 import { chromeFake, type FakePort } from "../../support/chrome";
-import { NATIVE_HOST } from "../../../src/shared";
 import { checkPi, loadSettings, setPiPath } from "../../../src/background/settings";
+import { setTarget } from "../../../src/background/target";
+
+const NATIVE_HOST = "com.ardi.test";
+beforeEach(() => setTarget({ nativeHost: NATIVE_HOST }));
 
 // A bridge that answers check_pi: paths in `working` run, others fail.
 function bridgeThatChecks(working: string[]) {

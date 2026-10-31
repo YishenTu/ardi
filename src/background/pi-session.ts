@@ -1,11 +1,10 @@
 import type { ChatMessage, ModelState, PiCommand, ThinkingLevel } from "../chat";
 import { joinParts, type BridgeEvent, type BridgeRequest } from "../bridge/protocol";
 import { plainMentions } from "../mention";
-import { NATIVE_HOST, type LiveItem, type PanelUpdate, type PiStatus, type SessionMeta } from "../shared";
+import type { LiveItem, PanelUpdate, PiStatus, SessionMeta } from "../shared";
 import { loadSettings } from "./settings";
-import { BUILD_TARGET } from "../build-target";
-import { ChromeBrowserController } from "./chrome-browser";
 import * as store from "./store";
+import { target, type BrowserLink } from "./target";
 
 // Owns the bridge connection (one pi process) and the current chat. Lives in
 // the service worker, so it keeps running when the side panel is closed. An
@@ -17,7 +16,7 @@ import * as store from "./store";
 const TITLE_LEN = 60;
 
 let port: chrome.runtime.Port | null = null;
-let browser: ChromeBrowserController | null = null;
+let browser: BrowserLink | null = null;
 const pendingPrompts = new Map<string, () => void>();
 let status: PiStatus = "disconnected";
 let session: SessionMeta;
@@ -146,29 +145,17 @@ export async function start() {
   if (port) return;
   setStatus("connecting");
   live = [];
-  const p = chrome.runtime.connectNative(NATIVE_HOST);
-  const control = BUILD_TARGET === "chrome" ? new ChromeBrowserController() : null;
-  const browserRequests = new Map<string, AbortController>();
-  browser = control;
+  const p = chrome.runtime.connectNative(target().nativeHost);
+  // Replies go only to the port that asked, not a replacement.
+  const link = target().connectBrowser?.((reply) => { if (port === p) p.postMessage(reply); }) ?? null;
+  browser = link;
   p.onMessage.addListener(joinParts((event) => {
     if (port !== p) return;
-    if (event.type === "browser_cancel") {
-      browserRequests.get(event.id)?.abort(new Error("Browser request canceled"));
-      return;
-    }
-    if (event.type !== "browser_request") return void onBridgeEvent(event);
-    if (!control) return;
-    const cancel = new AbortController();
-    browserRequests.set(event.id, cancel);
-    void control.execute(event.request, cancel.signal).then(
-      result => { if (port === p) p.postMessage({ type: "browser_reply", id: event.id, result }); },
-      (error: unknown) => { if (port === p) p.postMessage({ type: "browser_reply", id: event.id, error: error instanceof Error ? error.message : String(error) }); },
-    ).finally(() => browserRequests.delete(event.id));
+    if (event.type === "browser_request" || event.type === "browser_cancel") return link?.receive(event);
+    void onBridgeEvent(event);
   }));
   p.onDisconnect.addListener(() => {
-    for (const cancel of browserRequests.values()) cancel.abort();
-    browserRequests.clear();
-    void control?.dispose();
+    void link?.dispose();
     const err = chrome.runtime.lastError?.message;
     if (err) console.warn("pi bridge disconnected:", err);
     if (port === p) {

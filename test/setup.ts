@@ -29,6 +29,3 @@ Element.prototype.scrollIntoView = () => {};
 
 // Every file gets the chrome.* fake (test/support/chrome.ts), fresh per test.
 afterEach(resetChrome);
-
-// Exercise Chrome integration in source tests; distribution tests cover both builds.
-Object.assign(globalThis, { __ARDI_TARGET__: "chrome" });
