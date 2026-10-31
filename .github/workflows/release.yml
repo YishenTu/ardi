@@ -36,7 +36,7 @@ jobs:
             SHA256SUMS
           if-no-files-found: error
 
-  draft:
+  publish:
     needs: check
     runs-on: ubuntu-latest
     permissions:
@@ -47,8 +47,11 @@ jobs:
         with:
           name: release-packages
           path: release-assets
-      - name: Create draft prerelease
+      - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
-        run: gh release create "$RELEASE_TAG" release-assets/* --verify-tag --draft --prerelease --title "Ardi $RELEASE_TAG" --generate-notes
+        run: |
+          gh api --method POST "repos/$GITHUB_REPOSITORY/releases/generate-notes" -f tag_name="$RELEASE_TAG" --jq .body > generated-notes.md
+          awk '/^## New Contributors/ { skip=1; next } /^## |^\*\*Full Changelog/ { skip=0 } !skip' generated-notes.md > release-notes.md
+          gh release create "$RELEASE_TAG" release-assets/* --verify-tag --title "Ardi $RELEASE_TAG" --notes-file release-notes.md
