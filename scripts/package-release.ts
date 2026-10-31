@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
-import { spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+
+import { zip } from "./lib/zip";
 
 const root = resolve(import.meta.dirname, "..");
 const { version } = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { version: string };
@@ -23,8 +24,7 @@ for (const target of readdirSync(join(root, "src/targets"), { withFileTypes: tru
     cpSync(join(root, "LICENSE"), join(staging, "LICENSE"));
     writeFileSync(join(staging, "release.json"), JSON.stringify({ target, version }) + "\n");
     rmSync(archive, { force: true });
-    const result = spawnSync("zip", ["-qr", archive, "."], { cwd: staging, stdio: "inherit" });
-    if (result.status !== 0) throw new Error(`Could not package ${target}`);
+    zip(archive, staging);
     checksums.push(`${createHash("sha256").update(readFileSync(archive)).digest("hex")}  ${name}`);
   } finally { rmSync(staging, { recursive: true, force: true }); }
 }

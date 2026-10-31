@@ -6,6 +6,7 @@ import { resizeImage, type ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import { Type } from "typebox";
 import { resolve } from "node:path";
 import { registerDate } from "../../../../agent/lib/date";
+import { registerEnvironment } from "../../../../agent/lib/environment";
 import { MAX_CHARS, READ_PAGE, locateImage, text, truncate, fetchImage } from "../../../../agent/lib/page";
 
 // Output pi sees from one call. Longer page text is paged with `offset`.
@@ -56,6 +57,7 @@ type TabInfo = { id: string; title: string; url: string; current?: boolean };
 
 export default function (pi: ExtensionAPI) {
   registerDate(pi);
+  registerEnvironment(pi);
 
   pi.registerTool({
     name: "list_tabs",

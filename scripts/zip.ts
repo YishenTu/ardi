@@ -1,6 +1,7 @@
-import { spawnSync } from "node:child_process";
 import { mkdirSync, readdirSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
+
+import { zip } from "./lib/zip";
 
 const root = resolve(import.meta.dirname, "..");
 const buildDir = resolve(process.env.ARDI_BUILD_DIR || resolve(root, "dist"));
@@ -10,6 +11,5 @@ mkdirSync(releaseDir, { recursive: true });
 for (const target of readdirSync(join(root, "src/targets"), { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name)) {
   const archive = resolve(releaseDir, `ardi-${target}.zip`);
   rmSync(archive, { force: true });
-  const result = spawnSync("zip", ["-r", archive, ".", "-x", "bridge/*", "agent/*", "target.json"], { cwd: resolve(buildDir, target), stdio: "inherit" });
-  if (result.status !== 0) throw new Error(`Could not package ${target}`);
+  zip(archive, resolve(buildDir, target), ["bridge", "agent", "target.json"]);
 }

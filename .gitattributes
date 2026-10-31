@@ -1,0 +1,2 @@
+# Windows checkouts keep LF, which tests and generated files expect.
+* text=auto eol=lf

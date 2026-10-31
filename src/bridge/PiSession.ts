@@ -27,6 +27,9 @@ export class PiSession {
   private ready: Promise<void> | null = null;
   private models: ModelInfo[] = [];
   private commands: PiCommand[] = [];
+  // Set once the browser disconnects: closing pi's stdin then fails its
+  // pending requests, which is expected, not fatal.
+  private stopping = false;
 
   constructor(
     private readonly target: PiTarget,
@@ -91,8 +94,9 @@ export class PiSession {
     );
   }
 
-  shutdown(): void {
-    this.process?.shutdown();
+  shutdown(): Promise<void> {
+    this.stopping = true;
+    return this.process?.shutdown() ?? Promise.resolve();
   }
 
   private async launch(sessionFile?: string, piPath?: string): Promise<void> {
@@ -152,7 +156,8 @@ export class PiSession {
     this.emit({ type: "chunk", chunk: { type: "notice", content: errorMessage(error), level: "error" } });
   }
 
-  private fail(error: unknown, stderr?: string): never {
+  private fail(error: unknown, stderr?: string): void {
+    if (this.stopping) return;
     this.emit({ type: "fatal", message: [errorMessage(error), stderr].filter(Boolean).join("\n") });
     process.exit(1);
   }

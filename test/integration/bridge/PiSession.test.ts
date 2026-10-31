@@ -20,8 +20,8 @@ beforeAll(() => {
   spyOn(process, "exit").mockImplementation((() => undefined) as never);
 });
 
-afterEach(() => {
-  session?.shutdown();
+afterEach(async () => {
+  await session?.shutdown();
   delete process.env.FAKE_PI_WRONG_SESSION;
 });
 
@@ -46,7 +46,7 @@ const chunks = () => events.flatMap((e) => (e.type === "chunk" ? [e.chunk] : [])
 async function chatOnce(text: string): Promise<string> {
   void startSession().prompt(text);
   await waitFor(() => expect(chunks().at(-1)?.type).toBe("run_end"));
-  session.shutdown();
+  await session.shutdown();
   return (await ready(0)).sessionFile!;
 }
 

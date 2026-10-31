@@ -29,7 +29,7 @@ Extensions can't start local programs, so a small bridge runs Pi and streams its
 
 ## Quick start
 
-You need [bun](https://bun.sh) and Pi on macOS or Linux. In Ardia, turn on **Settings → Advanced → Command Line → Let the ardia command control Ardia**.
+You need [bun](https://bun.sh) and Pi on macOS or Linux; the Chrome version also runs on Windows. In Ardia, turn on **Settings → Advanced → Command Line → Let the ardia command control Ardia**.
 
 ### Download a release
 

@@ -11,8 +11,10 @@ import { resetChrome } from "./support/chrome";
 // The bridge writes to ~/.ardi and pi's sessions live under HOME, so tests
 // get their own HOME and never touch the real one. Bun reads os.homedir()
 // once at startup, so setting HOME isn't enough: homedir is replaced too.
+// Child processes on Windows find their home in USERPROFILE.
 const home = mkdtempSync(join(os.tmpdir(), "ardi-test-home-"));
 process.env.HOME = home;
+process.env.USERPROFILE = home;
 void mock.module("node:os", () => ({ ...os, default: { ...os, homedir: () => home }, homedir: () => home }));
 delete process.env.ARDI_PI_BIN;
 
