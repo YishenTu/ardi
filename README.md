@@ -22,21 +22,21 @@
 ## How it works
 
 ```
-side panel ⇄ background worker ⇄ native messaging ⇄ bridge (bun) ⇄ pi --mode rpc
+side panel ⇄ background worker ⇄ native messaging ⇄ bridge (node) ⇄ pi --mode rpc
 ```
 
 Extensions can't start local programs, so a small bridge runs Pi and streams its events back. Pi's session files under `~/.pi/agent/sessions` are the record of each chat; the extension only keeps the chat list. One build puts all of it in `dist/ardia/`: the extension, the bridge and Pi's setup. Chrome gets its own copy in `dist/chrome/`.
 
 ## Quick start
 
-You need [bun](https://bun.sh) and Pi on macOS or Linux; the Chrome version also runs on Windows. In Ardia, turn on **Settings → Advanced → Command Line → Let the ardia command control Ardia**.
+You need Pi and the Node.js it runs on (22.19 or newer) on macOS or Linux; the Chrome version also runs on Windows. Building from source also needs [Bun](https://bun.sh). In Ardia, turn on **Settings → Advanced → Command Line → Let the ardia command control Ardia**.
 
 ### Download a release
 
 Download `ardi-ardia-<version>.zip` from [Releases](https://github.com/YishenTu/ardi/releases), extract it, and open a terminal in the extracted folder:
 
 ```sh
-bun install-host.ts ardia
+node install-host.mjs ardia
 ```
 
 In Ardia, open **Settings → Extensions → Add extensions → Load unpacked extension**, select the folder printed by the installer, and open Ardi from the extensions menu. You can delete the download afterwards. To upgrade, run the installer from the new release and reload the extension.
@@ -61,13 +61,13 @@ In Ardia, open **Settings → Extensions → Add extensions → Load unpacked ex
 | **Tools** | Ardia tools are in `src/targets/ardia/agent/extension/`; Chrome tools are in `src/targets/chrome/agent/extension/`. |
 | **Your instructions** | Write them in `~/.ardi/AGENTS.md`; they apply from your next new chat. |
 | **Skills** | Drop them in `~/.ardi/.agents/skills/`; they show up in your next new chat. |
-| **Which Pi** | Set the Pi CLI path in Settings (the sliders button); leave it empty to use the Pi `host:install` found. |
+| **Which Pi** | Set the Pi CLI path in Settings (the sliders button); leave it empty to use the Pi the installer found. |
 
 Rebuild after editing the prompt or tools, then reload the extension.
 
 ## Chrome support
 
-Download and extract `ardi-chrome-<version>.zip` from [Releases](https://github.com/YishenTu/ardi/releases), then run `bun install-host.ts chrome` inside it. Requires Bun and Pi, as above.
+Download and extract `ardi-chrome-<version>.zip` from [Releases](https://github.com/YishenTu/ardi/releases), then run `node install-host.mjs chrome` inside it. Requires Node and Pi, as above.
 
 Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select the folder printed by the installer. For a source build, run `bun run host:install chrome` and load `dist/chrome/` instead.
 

@@ -21,6 +21,10 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.0
+      # Users run the bridge and installer on Node; test the oldest Pi supports.
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22.19.0
       - run: bun install --frozen-lockfile
       - name: Check release version
         env:

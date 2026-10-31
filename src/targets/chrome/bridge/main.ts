@@ -6,8 +6,8 @@ import { runBridge } from "../../../bridge/host";
 import target from "../target.json";
 import { ChromeBrowserRelay } from "./relay";
 
-runBridge({
+await runBridge({
   extension: resolve(import.meta.dirname, "../agent/extension"),
   tools: target.tools,
-  relay: (send) => new ChromeBrowserRelay(send),
+  relay: (send) => ChromeBrowserRelay.start(send),
 });

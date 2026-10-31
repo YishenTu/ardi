@@ -5,8 +5,8 @@
 // Ported from Claudian (src/core/process/windowsCmdShim.ts and
 // src/providers/pi/runtime/PiSubprocess.ts).
 
-import { existsSync, readFileSync, statSync } from "node:fs";
-import { dirname, extname, isAbsolute, join, normalize, resolve } from "node:path";
+import { accessSync, constants, existsSync, readFileSync, statSync } from "node:fs";
+import { delimiter, dirname, extname, isAbsolute, join, normalize, resolve } from "node:path";
 
 export interface Spawnable {
   command: string;
@@ -15,7 +15,7 @@ export interface Spawnable {
 
 export function spawnable(command: string, args: string[], platform = process.platform): Spawnable {
   if (platform !== "win32") return { command, args };
-  const path = isAbsolute(command) ? command : (Bun.which(command) ?? command);
+  const path = isAbsolute(command) ? command : (which(command) ?? command);
   const extension = extname(path).toLowerCase();
   if (extension === ".cmd" || extension === ".bat") {
     const script = readShimTarget(path);
@@ -40,8 +40,29 @@ export function readShimTarget(shim: string): string | null {
   return null;
 }
 
+// The first `command` on `path`, as a shell finds it. On Windows only names
+// with a PATHEXT extension run, so npm's extensionless sh script beside
+// pi.cmd is skipped.
+export function which(command: string, path = process.env.PATH ?? ""): string | null {
+  const windows = process.platform === "win32";
+  const extensions = windows ? (process.env.PATHEXT || ".COM;.EXE;.BAT;.CMD").toLowerCase().split(";").filter(Boolean) : [];
+  const names = !windows ? [command] : extensions.includes(extname(command).toLowerCase()) ? [command] : extensions.map((extension) => command + extension);
+  for (const dir of path.split(delimiter)) {
+    if (!dir) continue;
+    for (const name of names) {
+      const candidate = join(dir, name);
+      try {
+        if (!statSync(candidate).isFile()) continue;
+        if (!windows) accessSync(candidate, constants.X_OK);
+        return candidate;
+      } catch { /* not here */ }
+    }
+  }
+  return null;
+}
+
 // npm shims prefer a node.exe beside them, else node on PATH.
 function nodeFor(path: string): string {
   const local = join(dirname(path), "node.exe");
-  return existsSync(local) ? local : (Bun.which("node") ?? "node");
+  return existsSync(local) ? local : (which("node") ?? "node");
 }

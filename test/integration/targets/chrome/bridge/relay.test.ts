@@ -11,7 +11,7 @@ function request(body: unknown, token: string = relay.token, signal?: AbortSigna
 
 test("only authenticated local tool requests are forwarded to the extension", async () => {
   const sent: BridgeEvent[] = [];
-  relay = new ChromeBrowserRelay(event => sent.push(event));
+  relay = await ChromeBrowserRelay.start(event => sent.push(event));
   expect((await request({ op: "list" }, "wrong")).status).toBe(403);
   const origin = await fetch(relay.url, { method: "POST", headers: { Origin: "https://page.test", Authorization: `Bearer ${relay.token}` }, body: '{"op":"list"}' });
   expect(origin.status).toBe(403);
@@ -25,7 +25,7 @@ test("only authenticated local tool requests are forwarded to the extension", as
 
 test("concurrent replies are correlated and browser errors reach the right caller", async () => {
   const sent: any[] = [];
-  relay = new ChromeBrowserRelay(event => sent.push(event));
+  relay = await ChromeBrowserRelay.start(event => sent.push(event));
   const a = request({ op: "list" });
   const b = request({ op: "eval", id: "2", code: "1" });
   await waitFor(() => expect(sent).toHaveLength(2));
@@ -38,11 +38,11 @@ test("concurrent replies are correlated and browser errors reach the right calle
 });
 
 test("lost browser replies time out and disconnection fails outstanding calls", async () => {
-  relay = new ChromeBrowserRelay(() => {}, 30);
+  relay = await ChromeBrowserRelay.start(() => {}, 30);
   expect(await (await request({ op: "list" })).json()).toEqual({ error: expect.stringContaining("timed out") });
   relay.dispose();
   const sent: any[] = [];
-  relay = new ChromeBrowserRelay(e => sent.push(e));
+  relay = await ChromeBrowserRelay.start(e => sent.push(e));
   const pending = request({ op: "list" });
   await waitFor(() => expect(sent).toHaveLength(1));
   relay.dispose();

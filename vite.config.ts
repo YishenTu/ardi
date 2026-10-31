@@ -27,7 +27,9 @@ function host(): Plugin {
     },
     writeBundle({ dir }) {
       const out = dir ?? resolve(root, "dist", target);
-      bun([join(targetDir, "bridge/main.ts"), "--target=bun", "--outdir", join(out, "bridge")], "the bridge");
+      // The bridge runs on the user's Node, which Pi needs anyway.
+      bun([join(targetDir, "bridge/main.ts"), "--target=node", "--outdir", join(out, "bridge")], "the bridge");
+      writeFileSync(join(out, "bridge/package.json"), JSON.stringify({ type: "module" }) + "\n");
       // Pi supplies its own SDK and typebox to extensions.
       bun([join(targetDir, "agent/extension/index.ts"), "--target=node", "--external", "@earendil-works/pi-coding-agent", "--external", "typebox", "--outdir", join(out, "agent/extension")], "the Pi extension");
       cpSync(resolve(root, "src/agent/system-prompt.md"), join(out, "agent/system-prompt.md"));
