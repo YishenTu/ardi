@@ -27,7 +27,7 @@ test("release installs survive deleting downloads, coexist, and preserve shared 
   const env: Record<string, string> = { ...withPath(process.env, [bin, ...system].join(delimiter)), ARDI_BUILD_DIR: join(temp, "dist"), ARDI_RELEASE_DIR: releaseDir, ...installEnv(home) };
   const run = (command: string[], cwd = root, runEnv: Record<string, string> = env) => {
     const result = spawnSync(command[0], command.slice(1), { cwd, env: runEnv, encoding: "utf8" });
-    expect({ code: result.status, error: result.status ? result.stdout + result.stderr : "" }).toEqual({ code: 0, error: "" });
+    expect({ code: result.status, error: result.status ? `${command.join(" ")}: ${result.stdout}${result.stderr}${result.error?.message ?? ""}` : "" }).toEqual({ code: 0, error: "" });
     return result.stdout;
   };
   const install = (target: string, cwd: string, runEnv = env) => spawnSync(NODE, ["install-host.mjs", target], { cwd, env: runEnv, encoding: "utf8" });

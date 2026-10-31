@@ -51,6 +51,7 @@ const which = (bin: string) => whichOn(bin, PATH) ?? "";
 // Optional: without it, the bridge runs the pi set in Settings, or `pi` on PATH.
 const piBin = which("pi");
 const nodeBin = findNode();
+if (process.env.ARDI_DEBUG_INSTALL) console.error(`node: ${nodeBin}`);
 if (release && !piBin) throw new Error("pi not found on PATH; install the Pi coding agent before running this installer.");
 if (release) {
   // npm's pi.cmd can only run through cmd.exe. Fine for this fixed
