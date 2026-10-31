@@ -4,7 +4,7 @@
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 
@@ -70,7 +70,7 @@ if (release) {
   const staging = mkdtempSync(join(workDir, ".install-"));
   const previous = join(staging, "previous");
   try {
-    cpSync(source, join(staging, "app"), { recursive: true });
+    copyDir(source, join(staging, "app"));
     if (existsSync(installed)) renameSync(installed, previous);
     try { renameSync(join(staging, "app"), installed); }
     catch (error) { if (existsSync(previous)) renameSync(previous, installed); throw error; }
@@ -163,4 +163,14 @@ function findNode(): string {
     found.push(`${candidate} (${version || "unknown version"})`);
   }
   throw new Error(`Node.js ${MIN_NODE.join(".")} or newer not found${found.length ? `; found ${found.join(", ")}` : ""}. Install the Node.js that Pi needs, then run this installer again.`);
+}
+
+// Not fs.cpSync: on Windows, Node 22's native cpSync aborts the process on
+// non-ASCII paths (a user folder named José, say).
+function copyDir(from: string, to: string): void {
+  mkdirSync(to, { recursive: true });
+  for (const entry of readdirSync(from, { withFileTypes: true })) {
+    if (entry.isDirectory()) copyDir(join(from, entry.name), join(to, entry.name));
+    else copyFileSync(join(from, entry.name), join(to, entry.name));
+  }
 }
