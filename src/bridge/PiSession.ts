@@ -91,8 +91,8 @@ export class PiSession {
     );
   }
 
-  shutdown(): void {
-    this.process?.shutdown();
+  shutdown(): Promise<void> {
+    return this.process?.shutdown() ?? Promise.resolve();
   }
 
   private async launch(sessionFile?: string, piPath?: string): Promise<void> {

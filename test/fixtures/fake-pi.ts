@@ -5,14 +5,15 @@
 // response shapes follow pi's docs (docs/json.md, docs/rpc-commands.md).
 //
 // FAKE_PI_WRONG_SESSION=1 makes it report a session other than the one it
-// was asked to open.
+// was asked to open. FAKE_PI_IGNORE_EOF=1 makes it keep running after its
+// stdin closes, like a pi stuck in a tool call.
 
 import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const args = process.argv.slice(2);
 if (process.env.FAKE_PI_LAUNCH_LOG) writeFileSync(process.env.FAKE_PI_LAUNCH_LOG, JSON.stringify({
-  args, cwd: process.cwd(), relay: Boolean(process.env.ARDI_BROWSER_URL),
+  args, cwd: process.cwd(), relay: Boolean(process.env.ARDI_BROWSER_URL), pid: process.pid,
 }));
 if (args.includes("--version")) {
   console.log("0.0.0-fake");
@@ -118,4 +119,7 @@ process.stdin.on("data", (chunk: string) => {
     } else send({ type: "response", id: command.id, command: command.type, success: true, data: handle(command) });
   }
 });
-process.stdin.on("end", () => process.exit(0));
+process.stdin.on("end", () => {
+  if (process.env.FAKE_PI_IGNORE_EOF) setInterval(() => undefined, 1_000);
+  else process.exit(0);
+});

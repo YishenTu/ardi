@@ -23,6 +23,7 @@ const TOOLS: Record<string, { label: string; view: View }> = {
   write: { label: "Wrote", view: "write" },
   edit: { label: "Edited", view: "edit" },
   bash: { label: "Ran", view: "shell" },
+  powershell: { label: "Ran", view: "shell" },
   grep: { label: "Searched", view: "search" },
   find: { label: "Found files", view: "search" },
   ls: { label: "Listed", view: "files" },
@@ -86,7 +87,7 @@ function bodyFor(call: ToolState): Node[] {
 
   switch (TOOLS[call.name]?.view) {
     case "shell":
-      return [code(`$ ${str(input.command)}`), ...(result ? [output(result)] : [])];
+      return [code(`${call.name === "powershell" ? "PS>" : "$"} ${str(input.command)}`), ...(result ? [output(result)] : [])];
     case "code":
       return [code(sent(input)), ...(result ? [output(result)] : [])];
     case "write":

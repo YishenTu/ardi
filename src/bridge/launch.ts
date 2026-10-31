@@ -6,6 +6,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
 import type { PiCheck } from "./protocol";
+import { spawnable } from "./runtime/spawnable";
 
 // pi always runs here. Its sessions are stored per working folder, so a
 // fixed folder keeps all of Ardi's sessions together and resumable.
@@ -21,7 +22,9 @@ const SYSTEM_PROMPT = resolve(import.meta.dirname, "../agent/system-prompt.md");
 
 // Every built-in tool. Named explicitly, with the target's browser tools, so
 // the user's own pi `defaultTools` setting doesn't change what Ardi gets.
-const TOOLS = ["read", "bash", "edit", "write", "grep", "find", "ls", "codemode"];
+// Windows gets PowerShell instead of bash, so Git Bash isn't required.
+export const SHELL_TOOL = process.platform === "win32" ? "powershell" : "bash";
+const TOOLS = ["read", SHELL_TOOL, "edit", "write", "grep", "find", "ls", "codemode"];
 
 // What one browser target adds to pi: its extension directory (pi loads its
 // index.ts from source, the bundled index.js from dist) and the tools it registers.
@@ -55,13 +58,13 @@ export function buildPiLaunchSpec(target: PiTarget, sessionFile?: string, piPath
     "--no-prompt-templates",
   ];
   if (sessionFile) args.push("--session", sessionFile);
-  return { command: piCommand(piPath), args, cwd: WORK_DIR };
+  return { ...spawnable(piCommand(piPath), args), cwd: WORK_DIR };
 }
 
 // The user's pi path (`~` expanded), or the pi `host:install` found.
 // Throws if a user path isn't a file, so the error names the setting.
 export function piCommand(piPath?: string): string {
-  const path = piPath?.trim().replace(/^~(?=\/|$)/, homedir());
+  const path = piPath?.trim().replace(/^~(?=[\\/]|$)/, homedir());
   if (!path) return process.env.ARDI_PI_BIN || "pi";
   if (!existsSync(path)) throw new Error(`Pi not found at ${path}. Fix the path in Settings.`);
   if (!statSync(path).isFile()) throw new Error(`${path} is not a file. Fix the path in Settings.`);
@@ -70,14 +73,16 @@ export function piCommand(piPath?: string): string {
 
 // Runs `pi --version`, for the settings view.
 export function checkPi(piPath?: string): Promise<PiCheck> {
-  let command: string;
+  let command = piPath ?? "";
+  let run: ReturnType<typeof spawnable>;
   try {
     command = piCommand(piPath);
+    run = spawnable(command, ["--version"]);
   } catch (error) {
-    return Promise.resolve({ command: piPath ?? "", error: (error as Error).message });
+    return Promise.resolve({ command, error: (error as Error).message });
   }
   return new Promise((done) => {
-    execFile(command, ["--version"], { timeout: 10_000 }, (error, stdout, stderr) => {
+    execFile(run.command, run.args, { timeout: 10_000, windowsHide: true }, (error, stdout, stderr) => {
       done(error ? { command, error: stderr.trim() || error.message } : { command, version: stdout.trim() });
     });
   });

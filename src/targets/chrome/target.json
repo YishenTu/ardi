@@ -1,5 +1,10 @@
 {
   "nativeHost": "com.ardi.chrome.pi",
+  "nativeHostLocations": {
+    "darwin": "~/Library/Application Support/Google/Chrome/NativeMessagingHosts",
+    "linux": "~/.config/google-chrome/NativeMessagingHosts",
+    "win32": "HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts"
+  },
   "tools": ["list_tabs", "read_tab", "view_image", "open_tab", "browser_exec"],
   "install": [
     "In Chrome, open chrome://extensions, enable Developer mode, and load that folder."

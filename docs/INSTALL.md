@@ -1,8 +1,8 @@
 # Install Ardi
 
-Requires macOS or Linux, Bun and the Pi coding agent. Check that `bun --version` and `pi --version` work in your terminal. Ardia also needs its `ardia` CLI for browser control.
+Requires Bun and the Pi coding agent. Check that `bun --version` and `pi --version` work in your terminal. The Chrome version runs on macOS, Linux and Windows; on Windows, Pi runs commands in PowerShell, so Git Bash isn't needed. The Ardia version runs on macOS and Linux and also needs its `ardia` CLI for browser control.
 
-1. Extract the download for your browser and open a terminal in that folder.
+1. Extract the download for your browser and open a terminal (PowerShell on Windows) in that folder.
 2. Run the matching command:
 
    ```sh

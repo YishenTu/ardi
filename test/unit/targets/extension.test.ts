@@ -11,12 +11,16 @@ afterEach(() => setSystemTime());
 for (const name of readdirSync(TARGETS, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name)) {
   describe(`${name} Pi extension`, () => {
     async function load() {
-      const handlers: Record<string, (event: any) => unknown> = {};
+      // pi runs every handler registered for an event.
+      const listeners: Record<string, ((event: any) => unknown)[]> = {};
+      const handlers: Record<string, (event: any) => Promise<void>> = new Proxy({}, {
+        get: (_, event: string) => async (payload: unknown) => { for (const handler of listeners[event] ?? []) await handler(payload); },
+      });
       const tools: string[] = [];
       const { default: register } = await import(`${TARGETS}/${name}/agent/extension/index.ts`);
       register({
         registerTool: (tool: { name: string }) => tools.push(tool.name),
-        on: (event: string, handler: (event: any) => unknown) => (handlers[event] = handler),
+        on: (event: string, handler: (event: any) => unknown) => (listeners[event] ??= []).push(handler),
       });
       const { default: target } = await import(`${TARGETS}/${name}/target.json`);
       return { handlers, tools, target: target as { tools: string[] } };
@@ -28,7 +32,18 @@ for (const name of readdirSync(TARGETS, { withFileTypes: true }).filter(d => d.i
       setSystemTime(new Date(2026, 9, 29, 12));
       const event = { type: "before_agent_start", systemPromptOptions: { sections: { other: "kept" } as Record<string, string> } };
       await handlers.before_agent_start(event);
-      expect(event.systemPromptOptions.sections).toEqual({ other: "kept", date: "Today is Thursday, October 29, 2026." });
+      expect(event.systemPromptOptions.sections).toMatchObject({ other: "kept", date: "Today is Thursday, October 29, 2026." });
+    });
+
+    // Ardi's prompt replaces pi's, which would otherwise leave the model
+    // guessing bash syntax on Windows, where the shell tool is PowerShell.
+    test("each run's system prompt names the OS and the shell tool pi has", async () => {
+      const { handlers } = await load();
+      const event = { type: "before_agent_start", systemPromptOptions: { sections: {} as Record<string, string> } };
+      await handlers.before_agent_start(event);
+      const { args } = buildPiLaunchSpec({ extension: "", tools: [] });
+      const shell = args[args.indexOf("--tools") + 1].split(",").find((tool) => tool === "bash" || tool === "powershell")!;
+      expect(event.systemPromptOptions.sections.environment).toContain(`the ${shell} tool`);
     });
 
     // pi only offers the tools named in --tools, so one missing there is silently never used.

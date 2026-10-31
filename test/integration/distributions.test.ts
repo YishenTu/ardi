@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
-import { spawn, spawnSync } from "node:child_process";
 import { expect, test } from "bun:test";
 import { existsSync, readFileSync, realpathSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { platform, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { FAKE_PI } from "../support/executables";
+import { cleanUp, installEnv, LAUNCHER, readHostManifest, startHost, unzipFile } from "../support/nativeHost";
 import { waitFor } from "../support/wait";
 import { joinParts } from "../../src/bridge/protocol";
 
@@ -19,20 +19,21 @@ const run = async (args: string[], env = process.env) => {
 test("both distributions build and install without overwriting each other", async () => {
   const home = mkdtempSync(join(tmpdir(), "ardi-install-"));
   const buildDir = join(home, "dist");
-  const env = { ...process.env, HOME: home, ARDI_BUILD_DIR: buildDir, ARDI_RELEASE_DIR: join(home, "zips") };
+  const homeEnv = installEnv(home);
+  const env = { ...process.env, ...homeEnv, ARDI_BUILD_DIR: buildDir, ARDI_RELEASE_DIR: join(home, "zips") };
   // Pi supplies these dependencies via loader aliases; direct test imports
   // need equivalent resolution outside the repository.
-  symlinkSync(join(root, "node_modules"), join(home, "node_modules"));
+  symlinkSync(join(root, "node_modules"), join(home, "node_modules"), "junction");
+  // Ardia doesn't support Windows yet.
+  const targets = process.platform === "win32" ? ["chrome"] : ["ardia", "chrome"];
   try {
     await run(["run", "build"], env);
     for (const target of ["ardia", "chrome"]) writeFileSync(join(buildDir, target, "build-marker.txt"), target);
     await run(["scripts/zip.ts"], env);
-    for (const target of ["ardia", "chrome"]) {
+    for (const target of targets) {
       const archive = join(env.ARDI_RELEASE_DIR, `ardi-${target}.zip`);
       expect(existsSync(archive)).toBe(true);
-      const marker = spawnSync("unzip", ["-p", archive, "build-marker.txt"], { encoding: "utf8" });
-      expect(marker.status).toBe(0);
-      expect(marker.stdout).toBe(target);
+      expect(unzipFile(archive, "build-marker.txt")).toBe(target);
       const out = join(buildDir, target);
       const manifest = JSON.parse(readFileSync(join(out, "manifest.json"), "utf8"));
       expect(manifest.permissions.includes("debugger")).toBe(target === "chrome");
@@ -44,14 +45,13 @@ test("both distributions build and install without overwriting each other", asyn
       expect(existsSync(join(out, "agent/references", target === "chrome" ? "ardia.md" : "chrome.md"))).toBe(false);
       await run(["scripts/install-host.ts", target], env);
       const hostName = target === "chrome" ? "com.ardi.chrome.pi" : "com.ardi.pi";
-      const hostDir = platform() === "darwin" ? "Library/Application Support/Google/Chrome/NativeMessagingHosts" : ".config/google-chrome/NativeMessagingHosts";
-      const host = JSON.parse(readFileSync(join(home, hostDir, `${hostName}.json`), "utf8"));
+      const host = readHostManifest(homeEnv, hostName);
       const id = createHash("sha256").update(Buffer.from(manifest.key, "base64")).digest("hex").slice(0, 32).replace(/./g, h => String.fromCharCode(97 + parseInt(h, 16)));
       expect(host.name).toBe(hostName);
       expect(host.allowed_origins).toEqual([`chrome-extension://${id}/`]);
       expect(readFileSync(join(out, "background.js"), "utf8")).toContain(hostName);
       const log = join(home, `${target}-launch.json`);
-      const child = spawn(host.path, [], { env: { ...process.env, HOME: home, FAKE_PI_LAUNCH_LOG: log, ARDI_BROWSER_MODE: target === "chrome" ? "ardia" : "chrome", ARDI_BROWSER_URL: "http://invalid.test" } });
+      const child = startHost(host.path, { ...process.env, ...homeEnv, FAKE_PI_LAUNCH_LOG: log, ARDI_BROWSER_MODE: target === "chrome" ? "ardia" : "chrome", ARDI_BROWSER_URL: "http://invalid.test" });
       const exited = new Promise(resolve => child.once("exit", resolve));
       let ready = false;
       const receive = joinParts(event => { if (event.type === "ready") ready = true; });
@@ -89,11 +89,12 @@ test("both distributions build and install without overwriting each other", asyn
       } finally { child.stdin.end(); await exited; }
 
     }
-    const ardia = readFileSync(join(home, ".ardi/runtime/ardia/launch.sh"), "utf8");
-    const chrome = readFileSync(join(home, ".ardi/runtime/chrome/launch.sh"), "utf8");
-    expect(ardia).toContain("dist/ardia/bridge/main.js");
-    expect(chrome).toContain("dist/chrome/bridge/main.js");
-    await run(["scripts/install-host.ts", "ardia"], env);
-    expect(readFileSync(join(home, ".ardi/runtime/chrome/launch.sh"), "utf8")).toBe(chrome);
-  } finally { rmSync(home, { recursive: true, force: true }); }
-}, 30_000);
+    const chrome = readFileSync(join(home, ".ardi/runtime/chrome", LAUNCHER), "utf8");
+    expect(chrome).toContain(join("dist", "chrome", "bridge", "main.js"));
+    if (targets.includes("ardia")) {
+      expect(readFileSync(join(home, ".ardi/runtime/ardia", LAUNCHER), "utf8")).toContain(join("dist", "ardia", "bridge", "main.js"));
+      await run(["scripts/install-host.ts", "ardia"], env);
+      expect(readFileSync(join(home, ".ardi/runtime/chrome", LAUNCHER), "utf8")).toBe(chrome);
+    }
+  } finally { cleanUp(homeEnv); rmSync(home, { recursive: true, force: true }); }
+}, 60_000);

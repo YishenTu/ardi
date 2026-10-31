@@ -1,5 +1,9 @@
 {
   "nativeHost": "com.ardi.pi",
+  "nativeHostLocations": {
+    "darwin": "~/Library/Application Support/Google/Chrome/NativeMessagingHosts",
+    "linux": "~/.config/google-chrome/NativeMessagingHosts"
+  },
   "tools": ["list_tabs", "read_tab", "view_image", "open_tab", "ardia_exec"],
   "install": [
     "In Ardia, open Settings → Extensions → Add extensions → Load unpacked extension and select that folder.",

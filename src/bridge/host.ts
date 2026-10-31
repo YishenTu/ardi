@@ -1,5 +1,5 @@
 // Native messaging host: the browser starts a target's bridge entry (built to
-// dist/<target>/bridge/main.js, via ~/.ardi/runtime/<target>/launch.sh,
+// dist/<target>/bridge/main.js, via ~/.ardi/runtime/<target>/launch.sh (launch.cmd on Windows),
 // written by `bun run host:install`) when the extension connects, and closes
 // our stdin when it disconnects. Runs on bun.
 
@@ -58,8 +58,7 @@ export function runBridge(target: BridgeTarget): void {
     },
     () => {
       relay?.dispose();
-      session.shutdown();
-      process.exit(0);
+      void session.shutdown().finally(() => process.exit(0));
     },
   );
 }
