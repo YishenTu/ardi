@@ -1,12 +1,17 @@
 // Programs tests run: the fake pi, and small scripts in the temp home. On
 // Windows each is installed the way npm installs pi there: a .cmd shim that
-// runs a JS file with the node.exe beside it (here, a copy of bun).
+// runs a JS file with the node.exe beside it (here, a copy of the test's Node).
 import { chmodSync, copyFileSync, existsSync, linkSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const FAKE_PI_SOURCE = resolve(import.meta.dirname, "../fixtures/fake-pi.ts");
+
+// The Node that runs the fake pi and, in release tests, the bridge and installer.
+const found = Bun.which("node");
+if (!found) throw new Error("Tests need Node.js 22.19 or newer on PATH.");
+export const NODE: string = found;
 
 // npm's cmd-shim output for a package bin, as `npm install -g` writes it.
 export function npmShim(script: string): string {
@@ -33,21 +38,21 @@ export function npmShim(script: string): string {
 }
 
 // Writes an executable `dir/name` (`name.cmd` on Windows) that runs the
-// JavaScript `source` on bun, and returns the path to run.
+// JavaScript `source` on Node, and returns the path to run.
 export function executable(name: string, source: string, dir = homedir()): string {
   mkdirSync(dir, { recursive: true });
   if (process.platform !== "win32") {
     const path = join(dir, name);
-    writeFileSync(path, `#!/usr/bin/env bun\n${source}\n`);
+    writeFileSync(path, `#!/usr/bin/env node\n${source}\n`);
     chmodSync(path, 0o755);
     return path;
   }
-  const script = `node_modules\\${name}\\cli.js`;
+  const script = `node_modules\\${name}\\cli.mjs`;
   mkdirSync(join(dir, "node_modules", name), { recursive: true });
   writeFileSync(join(dir, script), source);
   const node = join(dir, "node.exe");
   if (!existsSync(node)) {
-    try { linkSync(process.execPath, node); } catch { copyFileSync(process.execPath, node); }
+    try { linkSync(NODE, node); } catch { copyFileSync(NODE, node); }
   }
   const shim = join(dir, `${name}.cmd`);
   writeFileSync(shim, npmShim(script));

@@ -18,12 +18,12 @@ afterEach(async () => {
 });
 // Pi's tools, the bridge's relay and the background's link, wired as the
 // native connection would.
-function setup() {
+async function setup() {
   chromeFake.tabs = [{ id: 42, title: "User tab", url: "https://user.test/", active: true, windowId: 1, status: "complete" }];
   const background = connectBrowser(reply => relay.reply(reply));
   link = background;
   canceledRequests = 0;
-  relay = new ChromeBrowserRelay(event => {
+  relay = await ChromeBrowserRelay.start(event => {
     if (event.type === "browser_cancel") canceledRequests++;
     if (event.type === "browser_cancel" || event.type === "browser_request") background.receive(event);
   });
@@ -35,7 +35,7 @@ function setup() {
 }
 
 test("Pi tools list and read the current tab through the real relay and background controller", async () => {
-  const tools = setup();
+  const tools = await setup();
   const listed = await tools.list_tabs.execute("list", {}, undefined);
   expect(listed.details).toEqual([{ id: "42", title: "User tab", url: "https://user.test/", current: true }]);
   chromeFake.onDebuggerCommand = () => ({ result: { value: "Visible text in the user's session" } });
@@ -46,7 +46,7 @@ test("Pi tools list and read the current tab through the real relay and backgrou
 });
 
 test("browser_exec sends JavaScript or real input commands and propagates failures", async () => {
-  const tools = setup();
+  const tools = await setup();
   chromeFake.onDebuggerCommand = () => ({ result: { value: "clicked" } });
   expect((await tools.browser_exec.execute("run", { code: 'document.querySelector("button").click()' }, undefined)).content[0].text).toBe("clicked");
   await tools.browser_exec.execute("type", { id: "42", method: "Input.insertText", params: { text: "Hello" } }, undefined);
@@ -57,7 +57,7 @@ test("browser_exec sends JavaScript or real input commands and propagates failur
 });
 
 test("open_tab keeps the user's page active by default; canceled tools do not issue commands", async () => {
-  const tools = setup();
+  const tools = await setup();
   const opened = await tools.open_tab.execute("open", { url: "https://new.test/" }, undefined);
   expect(opened.details.url).toBe("https://new.test/");
   expect(chromeFake.createdTabs[0].active).toBe(false);
@@ -67,7 +67,7 @@ test("open_tab keeps the user's page active by default; canceled tools do not is
 });
 
 test("Stop after dispatch cancels a queued browser mutation across the relay", async () => {
-  const tools = setup();
+  const tools = await setup();
   const originalGet = chrome.tabs.get;
   let release: ((tab: chrome.tabs.Tab) => void) | undefined;
   chrome.tabs.get = () => new Promise<chrome.tabs.Tab>(done => { release = done; });

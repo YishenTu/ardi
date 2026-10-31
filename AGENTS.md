@@ -14,7 +14,7 @@ Ardi is a side panel extension that wraps the locally installed Pi coding agent.
 
 ## Commands
 
-Use Bun.
+Use Bun for development. End users have only Node (Pi needs it): the bridge and the release installer (`node install-host.mjs`) run on Node, so runtime code uses Node APIs only.
 
 | Command | Purpose |
 | --- | --- |
@@ -59,6 +59,7 @@ Tests never use the real Pi, Ardia or home folder. Use these fixtures:
 | Resource | Fixture |
 | --- | --- |
 | Temporary home | `test/setup.ts` |
+| Node (runs the fake Pi; release tests also run the bridge and installer) | `NODE` in `test/support/executables.ts`, from PATH |
 | Pi process | `test/fixtures/fake-pi.ts` |
 | `chrome.*` APIs | `test/support/chrome.ts`, reset after every test |
 

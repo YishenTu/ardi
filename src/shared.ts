@@ -45,7 +45,7 @@ export type PanelUpdate =
   | { kind: "sessions"; sessions: SessionMeta[]; currentId: number };
 
 export type Settings = {
-  // pi's executable. Empty: the pi found by `bun run host:install`.
+  // pi's executable. Empty: the pi found by the installer.
   piPath: string;
 };
 

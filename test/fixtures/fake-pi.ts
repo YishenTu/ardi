@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 // A stand-in for `pi --mode rpc`, for bridge tests. Speaks pi's RPC JSONL
 // (one command per line in, responses and events out) and saves sessions
 // in pi's session file format, so resuming reads real history. Event and

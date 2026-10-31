@@ -1,19 +1,24 @@
 // Register one distribution without changing the other launcher or host.
-// Usage: bun run host:install <ardia|chrome>
+// Usage: bun run host:install <ardia|chrome> (development), or in a release
+// download, node install-host.mjs <ardia|chrome> (bundled for Node).
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, platform } from "node:os";
-import { delimiter, join, resolve } from "node:path";
+import { delimiter, dirname, join, resolve } from "node:path";
+
+import { which as whichOn } from "../src/bridge/runtime/spawnable";
 
 const target = process.argv[2];
-if (!target || !/^[a-z]+$/.test(target)) throw new Error("Usage: bun run host:install <ardia|chrome>");
+if (!target || !/^[a-z]+$/.test(target)) throw new Error("Usage: node install-host.mjs <ardia|chrome> (from source: bun run host:install <ardia|chrome>)");
 
 const windows = platform() === "win32";
+// Pi's own minimum for npm installs; the bridge needs no newer.
+const MIN_NODE = [22, 19];
 const releaseFile = join(import.meta.dirname, "release.json");
 const release = existsSync(releaseFile) ? JSON.parse(readFileSync(releaseFile, "utf8")) as { target: string; version: string } : undefined;
-if (release && release.target !== target) throw new Error(`This download is for ${release.target}; run bun install-host.ts ${release.target}.`);
+if (release && release.target !== target) throw new Error(`This download is for ${release.target}; run node install-host.mjs ${release.target}.`);
 const root = resolve(import.meta.dirname, "..");
 const source = release ? join(import.meta.dirname, "payload") : resolve(process.env.ARDI_BUILD_DIR || join(root, "dist"), target);
 const workDir = join(homedir(), ".ardi", "runtime", target);
@@ -42,25 +47,20 @@ const extensionId = createHash("sha256").update(Buffer.from(manifest.key, "base6
 // `bun run` puts node_modules/.bin first on PATH, and the pi dev dependency
 // lives there; the user's own PATH, without those, is what the host gets.
 const PATH = (process.env.PATH ?? "").split(delimiter).filter((dir) => !/node_modules[\\/]\.bin[\\/]?$/.test(dir)).join(delimiter);
-const which = (bin: string) => Bun.which(bin, { PATH }) ?? "";
+const which = (bin: string) => whichOn(bin, PATH) ?? "";
 // Optional: without it, the bridge runs the pi set in Settings, or `pi` on PATH.
 const piBin = which("pi");
-// The bridge is TypeScript and runs on bun. On Windows, bun on PATH may be
-// an npm .cmd shim that Chrome can't keep running; the bun running this
-// installer is a real bun.exe.
-const bunBin = windows ? process.execPath : which("bun");
-if (!bunBin) throw new Error("bun not found on PATH; install Bun before running this installer.");
+const nodeBin = findNode();
+if (process.env.ARDI_DEBUG_INSTALL) console.error(`node: ${nodeBin}`);
 if (release && !piBin) throw new Error("pi not found on PATH; install the Pi coding agent before running this installer.");
 if (release) {
-  for (const bin of [bunBin, piBin]) {
-    // npm's pi.cmd can only run through cmd.exe. Fine for this fixed
-    // command line; the bridge runs pi without it (src/bridge/runtime/spawnable.ts).
-    const viaCmd = windows && /\.(cmd|bat)$/i.test(bin);
-    const check = viaCmd
-      ? spawnSync(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", `""${bin}" --version"`], { env: { ...process.env, PATH }, encoding: "utf8", timeout: 10_000, windowsVerbatimArguments: true })
-      : spawnSync(bin, ["--version"], { env: { ...process.env, PATH }, encoding: "utf8", timeout: 10_000 });
-    if (check.status !== 0) throw new Error(`Cannot run ${bin} --version: ${check.stderr || check.error?.message || "command failed"}`);
-  }
+  // npm's pi.cmd can only run through cmd.exe. Fine for this fixed
+  // command line; the bridge runs pi without it (src/bridge/runtime/spawnable.ts).
+  const viaCmd = windows && /\.(cmd|bat)$/i.test(piBin);
+  const check = viaCmd
+    ? spawnSync(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", `""${piBin}" --version"`], { env: { ...process.env, PATH }, encoding: "utf8", timeout: 10_000, windowsVerbatimArguments: true })
+    : spawnSync(piBin, ["--version"], { env: { ...process.env, PATH }, encoding: "utf8", timeout: 10_000 });
+  if (check.status !== 0) throw new Error(`Cannot run ${piBin} --version: ${check.stderr || check.error?.message || "command failed"}`);
   for (const file of ["system-prompt.md", "extension/index.js", "references"]) {
     if (!existsSync(join(source, "agent", file))) throw new Error(`Incomplete download: missing agent/${file}`);
   }
@@ -70,7 +70,7 @@ if (release) {
   const staging = mkdtempSync(join(workDir, ".install-"));
   const previous = join(staging, "previous");
   try {
-    cpSync(source, join(staging, "app"), { recursive: true });
+    copyDir(source, join(staging, "app"));
     if (existsSync(installed)) renameSync(installed, previous);
     try { renameSync(join(staging, "app"), installed); }
     catch (error) { if (existsSync(previous)) renameSync(previous, installed); throw error; }
@@ -78,9 +78,11 @@ if (release) {
 }
 
 // Chrome starts the host with a minimal environment, so pin absolute paths
-// to bun and pi in a launcher script. It's machine-specific, so it lives
+// to node and pi in a launcher script. It's machine-specific, so it lives
 // in ~/.ardi rather than the repo.
 mkdirSync(workDir, { recursive: true });
+// npm's pi runs `node` from PATH, so the Node found here goes on it too.
+const hostPATH = PATH.split(delimiter).includes(dirname(nodeBin)) ? PATH : [dirname(nodeBin), PATH].join(delimiter);
 const launcher = join(workDir, windows ? "launch.cmd" : "launch.sh");
 if (windows) {
   // Chrome runs a .cmd host with `cmd.exe /d /s /c`. cmd reads the file in
@@ -92,9 +94,9 @@ if (windows) {
     [
       "@echo off",
       "chcp 65001 >nul",
-      `set "PATH=${cmd(PATH)}"`,
+      `set "PATH=${cmd(hostPATH)}"`,
       ...(piBin ? [`set "ARDI_PI_BIN=${cmd(piBin)}"`] : []),
-      `"${cmd(bunBin)}" "${cmd(hostScript)}" %*`,
+      `"${cmd(nodeBin)}" "${cmd(hostScript)}" %*`,
       "",
     ].join("\r\n"),
   );
@@ -102,7 +104,7 @@ if (windows) {
   const quote = (value: string) => "'" + value.replaceAll("'", "'\"'\"'") + "'";
   writeFileSync(
     launcher,
-    `#!/bin/sh\nexport PATH=${quote(PATH)}\n${piBin ? `export ARDI_PI_BIN=${quote(piBin)}\n` : ""}exec ${quote(bunBin)} ${quote(hostScript)}\n`,
+    `#!/bin/sh\nexport PATH=${quote(hostPATH)}\n${piBin ? `export ARDI_PI_BIN=${quote(piBin)}\n` : ""}exec ${quote(nodeBin)} ${quote(hostScript)}\n`,
   );
   chmodSync(launcher, 0o755);
 }
@@ -136,8 +138,39 @@ if (windows) {
 }
 
 console.log(`Installed ${manifestPath} for extension ${extensionId}`);
-console.log(`Launcher: ${launcher} (pi: ${piBin || "not found; set its path in Ardi's Settings"})`);
+console.log(`Launcher: ${launcher} (node: ${nodeBin}; pi: ${piBin || "not found; set its path in Ardi's Settings"})`);
 
 console.log(`Load unpacked: ${installed}`);
 for (const line of install) console.log(line);
 console.log("Reload the extension after an upgrade.");
+
+// The bridge runs on Node, which Pi needs too, so use the Node Pi uses:
+// npm's node.exe beside pi.cmd on Windows, node on PATH, or the private Node
+// pi.dev's installer keeps off PATH (its pi launcher adds it). The first new
+// enough for Pi wins.
+// TODO: where pi.dev's Windows installer keeps its Node is unverified.
+function findNode(): string {
+  const candidates = [
+    windows && /\.(cmd|bat)$/i.test(piBin) ? join(dirname(piBin), "node.exe") : "",
+    which("node"),
+    join(process.env.XDG_DATA_HOME || join(homedir(), ".local/share"), "pi-node/current/bin", windows ? "node.exe" : "node"),
+  ];
+  const found: string[] = [];
+  for (const candidate of new Set(candidates.filter((path) => path && existsSync(path)))) {
+    const version = spawnSync(candidate, ["--version"], { encoding: "utf8", timeout: 10_000 }).stdout?.trim() ?? "";
+    const [major = 0, minor = 0] = /^v(\d+)\.(\d+)/.exec(version)?.slice(1).map(Number) ?? [];
+    if (major > MIN_NODE[0] || (major === MIN_NODE[0] && minor >= MIN_NODE[1])) return candidate;
+    found.push(`${candidate} (${version || "unknown version"})`);
+  }
+  throw new Error(`Node.js ${MIN_NODE.join(".")} or newer not found${found.length ? `; found ${found.join(", ")}` : ""}. Install the Node.js that Pi needs, then run this installer again.`);
+}
+
+// Not fs.cpSync: on Windows, Node 22's native cpSync aborts the process on
+// non-ASCII paths (a user folder named José, say).
+function copyDir(from: string, to: string): void {
+  mkdirSync(to, { recursive: true });
+  for (const entry of readdirSync(from, { withFileTypes: true })) {
+    if (entry.isDirectory()) copyDir(join(from, entry.name), join(to, entry.name));
+    else copyFileSync(join(from, entry.name), join(to, entry.name));
+  }
+}

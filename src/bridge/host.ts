@@ -1,7 +1,7 @@
 // Native messaging host: the browser starts a target's bridge entry (built to
 // dist/<target>/bridge/main.js, via ~/.ardi/runtime/<target>/launch.sh (launch.cmd on Windows),
-// written by `bun run host:install`) when the extension connects, and closes
-// our stdin when it disconnects. Runs on bun.
+// written by the installer) when the extension connects, and closes our stdin
+// when it disconnects. Runs on Node.
 
 import { onExtensionMessage, sendToExtension } from "./nativeMessaging";
 import { checkPi, type PiTarget } from "./launch";
@@ -17,11 +17,12 @@ export interface BrowserRelay {
 }
 
 export interface BridgeTarget extends PiTarget {
-  relay?(send: (event: BridgeEvent) => void): BrowserRelay;
+  relay?(send: (event: BridgeEvent) => void): Promise<BrowserRelay>;
 }
 
-export function runBridge(target: BridgeTarget): void {
-  const relay = target.relay?.(sendToExtension);
+// Stdin is read only once the relay listens, so pi always gets its address.
+export async function runBridge(target: BridgeTarget): Promise<void> {
+  const relay = await target.relay?.(sendToExtension);
   // pi reaches the extension only through this host's own relay, never one
   // it inherited.
   delete process.env[RELAY_URL_ENV];
