@@ -5,15 +5,19 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "dev": "vite build --watch --mode development",
-    "build": "tsc --noEmit && vite build",
+    "dev": "ARDI_BUILD_TARGET=ardia vite build --watch --mode development",
+    "build": "tsc --noEmit && bun run build:ardia && bun run build:chrome",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint --type-aware --deny-warnings",
     "test": "bun test",
     "test:unit": "bun test ./test/unit",
     "test:integration": "bun test ./test/integration",
-    "zip": "bun run build && cd dist && zip -r ../ardi.zip . -x 'bridge/*' 'agent/*'",
-    "host:install": "bun scripts/install-host.ts"
+    "zip": "bun run build && bun scripts/zip.ts",
+    "host:install": "bun scripts/install-host.ts",
+    "build:ardia": "ARDI_BUILD_TARGET=ardia vite build",
+    "build:chrome": "ARDI_BUILD_TARGET=chrome vite build",
+    "dev:chrome": "ARDI_BUILD_TARGET=chrome vite build --watch --mode development",
+    "release:package": "bun run build && bun scripts/package-release.ts"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^1.4.0",

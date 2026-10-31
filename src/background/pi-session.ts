@@ -3,6 +3,8 @@ import { joinParts, type BridgeEvent, type BridgeRequest } from "../bridge/proto
 import { plainMentions } from "../mention";
 import { NATIVE_HOST, type LiveItem, type PanelUpdate, type PiStatus, type SessionMeta } from "../shared";
 import { loadSettings } from "./settings";
+import { BUILD_TARGET } from "../build-target";
+import { ChromeBrowserController } from "./chrome-browser";
 import * as store from "./store";
 
 // Owns the bridge connection (one pi process) and the current chat. Lives in
@@ -15,6 +17,8 @@ import * as store from "./store";
 const TITLE_LEN = 60;
 
 let port: chrome.runtime.Port | null = null;
+let browser: ChromeBrowserController | null = null;
+const pendingPrompts = new Map<string, () => void>();
 let status: PiStatus = "disconnected";
 let session: SessionMeta;
 // null while a saved chat's history hasn't arrived yet.
@@ -90,8 +94,14 @@ function post(request: BridgeRequest) {
   port?.postMessage(request);
 }
 
-async function onBridgeEvent(event: BridgeEvent) {
+async function onBridgeEvent(event: Exclude<BridgeEvent, { type: "browser_request" | "browser_cancel" }>) {
   switch (event.type) {
+    case "prompt_result": {
+      const accept = pendingPrompts.get(event.promptId);
+      pendingPrompts.delete(event.promptId);
+      if (event.started) accept?.();
+      break;
+    }
     case "ready":
       opening = Math.max(0, opening - 1);
       if (opening) break;
@@ -137,12 +147,34 @@ export async function start() {
   setStatus("connecting");
   live = [];
   const p = chrome.runtime.connectNative(NATIVE_HOST);
-  p.onMessage.addListener(joinParts((event) => void onBridgeEvent(event)));
+  const control = BUILD_TARGET === "chrome" ? new ChromeBrowserController() : null;
+  const browserRequests = new Map<string, AbortController>();
+  browser = control;
+  p.onMessage.addListener(joinParts((event) => {
+    if (port !== p) return;
+    if (event.type === "browser_cancel") {
+      browserRequests.get(event.id)?.abort(new Error("Browser request canceled"));
+      return;
+    }
+    if (event.type !== "browser_request") return void onBridgeEvent(event);
+    if (!control) return;
+    const cancel = new AbortController();
+    browserRequests.set(event.id, cancel);
+    void control.execute(event.request, cancel.signal).then(
+      result => { if (port === p) p.postMessage({ type: "browser_reply", id: event.id, result }); },
+      (error: unknown) => { if (port === p) p.postMessage({ type: "browser_reply", id: event.id, error: error instanceof Error ? error.message : String(error) }); },
+    ).finally(() => browserRequests.delete(event.id));
+  }));
   p.onDisconnect.addListener(() => {
+    for (const cancel of browserRequests.values()) cancel.abort();
+    browserRequests.clear();
+    void control?.dispose();
     const err = chrome.runtime.lastError?.message;
     if (err) console.warn("pi bridge disconnected:", err);
     if (port === p) {
       port = null;
+      browser = null;
+      pendingPrompts.clear();
       setStatus("disconnected");
     }
   });
@@ -156,6 +188,9 @@ export async function start() {
 // Restarts the pi process; pi resumes the same session. Also applies
 // changed settings.
 export async function restart() {
+  await browser?.dispose();
+  browser = null;
+  pendingPrompts.clear();
   port?.disconnect();
   port = null;
   setStatus("disconnected");
@@ -196,6 +231,8 @@ export async function deleteSession(id: number) {
 
 export async function prompt(text: string) {
   await start();
+  const origin = port;
+  const accept = browser?.preparePrompt();
   session.updatedAt = Date.now();
   if (isDraft(session)) {
     // First message: the chat becomes real and joins the list.
@@ -210,10 +247,15 @@ export async function prompt(text: string) {
     await store.putSession(session);
   }
   pushLive({ kind: "prompt", text, at: Date.now() });
-  post({ type: "prompt", text });
+  // A restart during storage writes must not drop the message. Permission
+  // callbacks belong to their original controller, not the replacement port.
+  const promptId = port === origin && accept ? crypto.randomUUID() : undefined;
+  if (promptId && accept) pendingPrompts.set(promptId, accept);
+  post({ type: "prompt", text, promptId });
 }
 
 export function abort() {
+  browser?.cancel();
   post({ type: "abort" });
 }
 

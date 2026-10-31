@@ -1,0 +1,54 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - run: bun install --frozen-lockfile
+      - name: Check release version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: bun -e 'const p = await Bun.file("package.json").json(); if (process.env.RELEASE_TAG !== `v${p.version}`) throw new Error("Tag must match package.json version");'
+      - run: bun run lint
+      - run: bun test --randomize
+      - run: bun run release:package
+      - uses: actions/upload-artifact@v7
+        if: runner.os == 'Linux'
+        with:
+          name: release-packages
+          path: |
+            ardi-ardia-*.zip
+            ardi-chrome-*.zip
+            SHA256SUMS
+          if-no-files-found: error
+
+  draft:
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-packages
+          path: release-assets
+      - name: Create draft prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release create "$RELEASE_TAG" release-assets/* --verify-tag --draft --prerelease --title "Ardi $RELEASE_TAG" --generate-notes

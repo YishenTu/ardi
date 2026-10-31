@@ -26,7 +26,7 @@ function frame(request: BridgeRequest): Buffer {
 function startBridge(): BridgeEvent[] {
   const events: BridgeEvent[] = [];
   const listen = joinParts((event) => events.push(event));
-  bridge = spawn(process.execPath, [MAIN], { env: process.env });
+  bridge = spawn(process.execPath, ["--define", '__ARDI_TARGET__="chrome"', MAIN], { env: process.env });
   let buffer = Buffer.alloc(0);
   bridge.stdout.on("data", (chunk: Buffer) => {
     buffer = Buffer.concat([buffer, chunk]);
@@ -55,4 +55,17 @@ test("reads framed requests however stdin splits them, answers in frames, and st
   const exited = new Promise<number | null>((done) => bridge.on("exit", done));
   bridge.stdin.end();
   expect(await exited).toBe(0);
+});
+
+test("Pi browser requests travel over native messaging and receive the extension's result", async () => {
+  const events = startBridge();
+  bridge.stdin.write(frame({ type: "start", piPath: FAKE_PI }));
+  await waitFor(() => expect(events.map(e => e.type)).toContain("ready"));
+  bridge.stdin.write(frame({ type: "prompt", text: "browser:list" }));
+  await waitFor(() => expect(events.some(e => e.type === "browser_request")).toBe(true));
+  const request = events.find(e => e.type === "browser_request")!;
+  if (request.type !== "browser_request") throw new Error("Missing browser request");
+  expect(request.request).toEqual({ op: "list" });
+  bridge.stdin.write(frame({ type: "browser_reply", id: request.id, result: [{ id: "123", title: "User's existing tab" }] }));
+  await waitFor(() => expect(events).toContainEqual({ type: "chunk", chunk: { type: "text", content: 'echo: [{"id":"123","title":"User\'s existing tab"}]' } }));
 });
