@@ -1,5 +1,6 @@
 import { joinParts, type PiCheck } from "../bridge/protocol";
-import { NATIVE_HOST, type Settings } from "../shared";
+import type { Settings } from "../shared";
+import { target } from "./target";
 
 // Ardi's settings, in chrome.storage.local. Owned here: the side panel asks
 // for them and for changes, and pi-session reads them when it starts pi.
@@ -25,7 +26,7 @@ export async function setPiPath(piPath: string): Promise<{ saved: boolean; check
 // bridge running pi, which may be down because of a bad path.
 export function checkPi(piPath: string): Promise<PiCheck> {
   return new Promise((resolve) => {
-    const port = chrome.runtime.connectNative(NATIVE_HOST);
+    const port = chrome.runtime.connectNative(target().nativeHost);
     port.onMessage.addListener(
       joinParts((event) => {
         if (event.type !== "pi_check") return;

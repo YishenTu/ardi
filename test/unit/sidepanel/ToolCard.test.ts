@@ -26,6 +26,26 @@ describe("summary line", () => {
   });
 });
 
+// Each build has its own exec tool; the panel shows them the same way.
+test("every browser's exec tool shows as the same code card", () => {
+  for (const name of ["ardia_exec", "browser_exec"]) {
+    const card = toolCard(call({ name, input: { code: "first()\nsecond()" }, result: "done" }));
+    expect(summary(card)).toEqual(["Ran in browser", "first()"]);
+    expect(card.querySelector(".tool-code")!.textContent).toBe("first()\nsecond()");
+    expect(card.querySelector(".tool-output pre")!.textContent).toBe("done");
+  }
+});
+
+// browser_exec can send a CDP command or close a tab instead of running code.
+test("an exec call without code shows the command it sent", () => {
+  const typed = toolCard(call({ name: "browser_exec", input: { id: "42", method: "Input.insertText", params: { text: "Hi" } } }));
+  expect(summary(typed)).toEqual(["Ran in browser", "Input.insertText"]);
+  expect(typed.querySelector(".tool-code")!.textContent).toBe('Input.insertText {\n  "text": "Hi"\n}');
+  const closed = toolCard(call({ name: "browser_exec", input: { id: "42", close: true } }));
+  expect(summary(closed)).toEqual(["Ran in browser", "close tab 42"]);
+  expect(closed.querySelector(".tool-code")!.textContent).toBe("close tab 42");
+});
+
 describe("read_tab", () => {
   test("shows the tab as a link and drops the title and URL the text starts with", () => {
     const tab = { id: "1", title: "Docs", url: "https://example.com/docs" };

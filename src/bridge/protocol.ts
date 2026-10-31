@@ -1,7 +1,17 @@
 // Messages between the extension's background and the bridge, over Chrome
 // native messaging.
-import type { BrowserReply, BrowserRequest } from "../browser-protocol";
 import type { ChatChunk, ChatMessage, ModelState, PiCommand, ThinkingLevel } from "../chat";
+
+// A target can let pi's tools reach the extension through the bridge: the
+// bridge serves a local relay (URL and bearer token in these variables, for
+// pi only) and forwards each call as a `browser_request`. Only the target
+// reads the request; the bridge and background route it unread.
+export const RELAY_URL_ENV = "ARDI_BROWSER_URL";
+export const RELAY_TOKEN_ENV = "ARDI_BROWSER_TOKEN";
+export type BrowserReply = { type: "browser_reply"; id: string; result?: unknown; error?: string };
+export type BrowserRelayEvent =
+  | { type: "browser_request"; id: string; request: unknown }
+  | { type: "browser_cancel"; id: string };
 
 // Extension -> bridge.
 export type BridgeRequest =
@@ -25,8 +35,7 @@ export type PiCheck = { command: string; version?: string; error?: string };
 // Bridge -> extension.
 export type BridgeEvent =
   | { type: "prompt_result"; promptId: string; started: boolean }
-  | { type: "browser_cancel"; id: string }
-  | { type: "browser_request"; id: string; request: BrowserRequest }
+  | BrowserRelayEvent
   // A saved session's history, read from its file as soon as `start` or
   // `open` asks for it, so the chat shows while pi starts or switches.
   | { type: "history"; sessionFile: string; history: ChatMessage[] }

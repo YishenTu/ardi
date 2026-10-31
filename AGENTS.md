@@ -5,8 +5,10 @@ Ardi is a side panel extension that wraps the locally installed Pi coding agent.
 ## Browser and installation constraints
 
 - **Keep browser targets explicit.** Ardia tools use `ardia exec`; Chrome tools use the hosting extension's debugger API without remote-debugging flags. Never fall back across browsers.
-- **Preserve extension identities.** Keep the Ardia key in `public/manifest.json` and Chrome key in `config/chrome.json`: native host allowlists depend on them. After changing a host path or registration, rerun `bun run host:install <ardia|chrome>`.
-- **Rebuild and reload.** Development artifacts, including each bridge and agent setup, live in `dist/ardia/` and `dist/chrome/`. Release installers copy them into `~/.ardi/runtime/<target>/app/`. After source changes, rebuild and reload the affected extension so its bridge restarts.
+- **Keep targets split.** Browser-specific code, configuration and Pi setup live in `src/targets/<target>/`. Shared code never imports a target or branches on one; targets plug in through `BackgroundTarget` (`src/background/target.ts`) and `BridgeTarget` (`src/bridge/host.ts`) from their entry points. Targets never import each other.
+- **Preserve extension identities.** Keep each extension's key in `src/targets/<target>/manifest.json` and its native host name in `target.json`: native host allowlists depend on them. After changing a host path or registration, rerun `bun run host:install <ardia|chrome>`.
+- **Resolve runtime files at entry depth.** The bridge and Pi extension are each bundled into one file, so every bundled module's `import.meta.dirname` is the entry's output directory. Resolve files only from modules in `src/bridge/` or a target's `bridge/` or `agent/extension/`, so source and `dist/` paths agree.
+- **Rebuild and reload.** Development artifacts, including each bridge and agent setup, live in `dist/<target>/`. Release installers copy them into `~/.ardi/runtime/<target>/app/`. After source changes, rebuild and reload the affected extension so its bridge restarts.
 - **Preserve the shared working directory.** Both versions run Pi in `~/.ardi/` and share user instructions and skills. Pi stores sessions per working directory, so changing it breaks resume.
 - **Keep launchers separate.** Generated launchers belong in `~/.ardi/runtime/<target>/` so installing one version cannot redirect the other.
 
@@ -17,7 +19,7 @@ Use Bun.
 | Command | Purpose |
 | --- | --- |
 | `bun install` | Install dependencies. |
-| `bun run build` | Typecheck `src/` (including `src/agent/`) and `test/`, then build both distributions with their bridges and agent setups. |
+| `bun run build` | Typecheck `src/` and `test/`, then build both distributions with their bridges and agent setups. |
 | `bun run typecheck` | Run the same typecheck without building. |
 | `bun run dev` | Watch and rebuild Ardia. |
 | `bun run dev:chrome` | Watch and rebuild Chrome. |

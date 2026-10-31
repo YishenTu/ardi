@@ -8,8 +8,7 @@ import { homedir, platform } from "node:os";
 import { join, resolve } from "node:path";
 
 const target = process.argv[2];
-if (target !== "ardia" && target !== "chrome") throw new Error("Usage: bun run host:install <ardia|chrome>");
-const NATIVE_HOST = target === "chrome" ? "com.ardi.chrome.pi" : "com.ardi.pi";
+if (!target || !/^[a-z]+$/.test(target)) throw new Error("Usage: bun run host:install <ardia|chrome>");
 
 if (!["darwin", "linux"].includes(platform())) throw new Error("This installer supports macOS and Linux only.");
 const releaseFile = join(import.meta.dirname, "release.json");
@@ -22,6 +21,8 @@ const installed = release ? join(workDir, "app") : source;
 // The built bridge, so a build updates it along with the extension.
 const hostScript = join(installed, "bridge/main.js");
 if (!existsSync(join(source, "bridge/main.js"))) throw new Error("Built bridge not found; run `bun run build` first.");
+// Written by the build from src/targets/<target>/target.json.
+const { nativeHost, install } = JSON.parse(readFileSync(join(source, "target.json"), "utf8")) as { nativeHost: string; install: string[] };
 // Chrome's extension ID: first 32 hex chars of sha256(public key), a-p.
 const manifest = JSON.parse(readFileSync(join(source, "manifest.json"), "utf8")) as { key: string };
 const extensionId = createHash("sha256").update(Buffer.from(manifest.key, "base64")).digest("hex").slice(0, 32)
@@ -50,7 +51,7 @@ if (release) {
     const check = spawnSync(bin, ["--version"], { env: { ...process.env, PATH }, encoding: "utf8", timeout: 10_000 });
     if (check.status !== 0) throw new Error(`Cannot run ${bin} --version: ${check.stderr || check.error?.message || "command failed"}`);
   }
-  for (const file of ["system-prompt.md", `extension/${target === "chrome" ? "chrome.ts" : "ardia.ts"}`, `references/${target === "chrome" ? "chrome.md" : "ardia.md"}`]) {
+  for (const file of ["system-prompt.md", "extension/index.js", "references"]) {
     if (!existsSync(join(source, "agent", file))) throw new Error(`Incomplete download: missing agent/${file}`);
   }
   // Stage a complete copy before replacing the installed application. Only
@@ -84,12 +85,12 @@ const manifestDir =
     : join(homedir(), ".config/google-chrome/NativeMessagingHosts");
 mkdirSync(manifestDir, { recursive: true });
 
-const manifestPath = join(manifestDir, `${NATIVE_HOST}.json`);
+const manifestPath = join(manifestDir, `${nativeHost}.json`);
 writeFileSync(
   manifestPath,
   JSON.stringify(
     {
-      name: NATIVE_HOST,
+      name: nativeHost,
       description: "Ardi bridge to the pi coding agent",
       path: launcher,
       type: "stdio",
@@ -104,8 +105,5 @@ console.log(`Installed ${manifestPath} for extension ${extensionId}`);
 console.log(`Launcher: ${launcher} (pi: ${piBin || "not found; set its path in Ardi's Settings"})`);
 
 console.log(`Load unpacked: ${installed}`);
-console.log(target === "ardia"
-  ? "In Ardia, open Settings → Extensions → Add extensions → Load unpacked extension and select that folder."
-  : "In Chrome, open chrome://extensions, enable Developer mode, and load that folder.");
+for (const line of install) console.log(line);
 console.log("Reload the extension after an upgrade.");
-if (target === "ardia") console.log('Enable Ardia Settings → Advanced → Command Line → "Let the ardia command control Ardia".');

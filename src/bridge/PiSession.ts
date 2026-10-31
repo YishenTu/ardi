@@ -7,7 +7,7 @@ import { resolve } from "node:path";
 
 import type { ModelInfo, ModelState, PiCommand, ThinkingLevel } from "../chat";
 import { readPiHistory } from "./history/piHistory";
-import { buildPiLaunchSpec, prepareWorkDir } from "./launch";
+import { buildPiLaunchSpec, prepareWorkDir, type PiTarget } from "./launch";
 import { toModelInfo } from "./models";
 import { createPiEventNormalizationState, normalizePiRPCEvent } from "./normalization/piEventNormalization";
 import type { BridgeEvent } from "./protocol";
@@ -28,7 +28,10 @@ export class PiSession {
   private models: ModelInfo[] = [];
   private commands: PiCommand[] = [];
 
-  constructor(private readonly emit: (event: BridgeEvent) => void) {}
+  constructor(
+    private readonly target: PiTarget,
+    private readonly emit: (event: BridgeEvent) => void,
+  ) {}
 
   start(sessionFile?: string, piPath?: string): void {
     if (this.ready) return;
@@ -95,7 +98,7 @@ export class PiSession {
   private async launch(sessionFile?: string, piPath?: string): Promise<void> {
     prepareWorkDir();
     const resumeFile = saved(sessionFile);
-    const proc = new PiProcess(buildPiLaunchSpec(resumeFile, piPath));
+    const proc = new PiProcess(buildPiLaunchSpec(this.target, resumeFile, piPath));
     const transport = new PiRPCTransport({ input: proc.stdout, output: proc.stdin });
     proc.onClose((error) => this.fail(error ?? new Error("pi exited"), proc.stderrSnapshot));
     const normalization = createPiEventNormalizationState();

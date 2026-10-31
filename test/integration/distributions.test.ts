@@ -17,7 +17,6 @@ const run = async (args: string[], env = process.env) => {
 };
 
 test("both distributions build and install without overwriting each other", async () => {
-  const base = JSON.parse(readFileSync(join(root, "public/manifest.json"), "utf8"));
   const home = mkdtempSync(join(tmpdir(), "ardi-install-"));
   const buildDir = join(home, "dist");
   const env = { ...process.env, HOME: home, ARDI_BUILD_DIR: buildDir, ARDI_RELEASE_DIR: join(home, "zips") };
@@ -37,10 +36,10 @@ test("both distributions build and install without overwriting each other", asyn
       const out = join(buildDir, target);
       const manifest = JSON.parse(readFileSync(join(out, "manifest.json"), "utf8"));
       expect(manifest.permissions.includes("debugger")).toBe(target === "chrome");
-      if (target === "ardia") expect(manifest.key).toBe(base.key);
-      else expect(manifest.key).not.toBe(base.key);
+      // The extension ID, and so the native host's allowlist, comes from the target's key.
+      expect(manifest.key).toBe(JSON.parse(readFileSync(join(root, "src/targets", target, "manifest.json"), "utf8")).key);
       expect(existsSync(join(out, "bridge/main.js"))).toBe(true);
-      const agent = readFileSync(join(out, "agent/extension", target === "chrome" ? "chrome.ts" : "ardia.ts"), "utf8");
+      const agent = readFileSync(join(out, "agent/extension/index.js"), "utf8");
       expect(agent).not.toContain("ARDI_BROWSER_URL) return");
       expect(existsSync(join(out, "agent/references", target === "chrome" ? "ardia.md" : "chrome.md"))).toBe(false);
       await run(["scripts/install-host.ts", target], env);
@@ -76,7 +75,8 @@ test("both distributions build and install without overwriting each other", asyn
         const args: string[] = launch.args;
         const extension = args[args.indexOf("--extension") + 1];
         const registered: { name: string; description: string }[] = [];
-        const { default: register } = await import(extension);
+        expect(extension).toBe(realpathSync(join(out, "agent/extension")));
+        const { default: register } = await import(join(extension, "index.js"));
         register({ on() {}, registerTool(tool: { name: string; description: string }) { registered.push(tool); } });
         const enabled = args[args.indexOf("--tools") + 1].split(",");
         expect(enabled).toEqual(expect.arrayContaining(registered.map(t => t.name)));

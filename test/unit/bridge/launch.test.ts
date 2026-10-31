@@ -30,9 +30,11 @@ describe("piCommand", () => {
   });
 });
 
+const TARGET = { extension: "/dist/test/agent/extension", tools: ["list_tabs", "browser_exec"] };
+
 describe("buildPiLaunchSpec", () => {
   test("runs pi in RPC mode in ~/.ardi, isolated from the user's own pi setup except AGENTS.md", () => {
-    const spec = buildPiLaunchSpec();
+    const spec = buildPiLaunchSpec(TARGET);
     expect(spec.cwd).toBe(join(homedir(), ".ardi"));
     expect(spec.args.slice(0, 2)).toEqual(["--mode", "rpc"]);
     for (const flag of ["--no-extensions", "--no-skills", "--no-prompt-templates"]) expect(spec.args).toContain(flag);
@@ -40,14 +42,14 @@ describe("buildPiLaunchSpec", () => {
     expect(spec.args).not.toContain("--no-context-files");
     // Ardi's own prompt, extension and skills come back in explicitly.
     expect(spec.args[spec.args.indexOf("--system-prompt") + 1]).toEndWith("src/agent/system-prompt.md");
-    expect(spec.args[spec.args.indexOf("--extension") + 1]).toEndWith("src/agent/extension/chrome.ts");
+    expect(spec.args[spec.args.indexOf("--extension") + 1]).toBe(TARGET.extension);
     expect(spec.args[spec.args.indexOf("--skill") + 1]).toBe(join(WORK_DIR, ".agents", "skills"));
-    expect(spec.args[spec.args.indexOf("--tools") + 1].split(",")).toContain("browser_exec");
+    expect(spec.args[spec.args.indexOf("--tools") + 1].split(",")).toEqual(expect.arrayContaining(["read", "bash", ...TARGET.tools]));
   });
 
   test("resumes a session only when given one", () => {
-    expect(buildPiLaunchSpec().args).not.toContain("--session");
-    const args = buildPiLaunchSpec("/s/chat.jsonl").args;
+    expect(buildPiLaunchSpec(TARGET).args).not.toContain("--session");
+    const args = buildPiLaunchSpec(TARGET, "/s/chat.jsonl").args;
     expect(args[args.indexOf("--session") + 1]).toBe("/s/chat.jsonl");
   });
 });

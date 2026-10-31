@@ -7,28 +7,33 @@ export type ToolState = ToolCall & { output?: string };
 // Output longer than this collapses behind "Show all".
 const PREVIEW_LINES = 12;
 
-const LABELS: Record<string, string> = {
-  list_tabs: "Listed tabs",
-  read_tab: "Read tab",
-  view_image: "Viewed image",
-  open_tab: "Opened tab",
-  ardia_exec: "Ran in browser",
-  browser_exec: "Ran in browser",
-  read: "Read",
-  write: "Wrote",
-  edit: "Edited",
-  bash: "Ran",
-  grep: "Searched",
-  find: "Found files",
-  ls: "Listed",
-  codemode: "Ran code",
+// How the panel shows a tool. Tools of different browsers that do the same
+// thing share a view, so every build looks alike.
+type View = "tabs" | "tab" | "opened_tab" | "image" | "code" | "shell" | "write" | "edit" | "search" | "files";
+
+const TOOLS: Record<string, { label: string; view: View }> = {
+  list_tabs: { label: "Listed tabs", view: "tabs" },
+  read_tab: { label: "Read tab", view: "tab" },
+  view_image: { label: "Viewed image", view: "image" },
+  open_tab: { label: "Opened tab", view: "opened_tab" },
+  // Each browser's own way to act in the page: Python in Ardia, JavaScript in Chrome.
+  ardia_exec: { label: "Ran in browser", view: "code" },
+  browser_exec: { label: "Ran in browser", view: "code" },
+  read: { label: "Read", view: "files" },
+  write: { label: "Wrote", view: "write" },
+  edit: { label: "Edited", view: "edit" },
+  bash: { label: "Ran", view: "shell" },
+  grep: { label: "Searched", view: "search" },
+  find: { label: "Found files", view: "search" },
+  ls: { label: "Listed", view: "files" },
+  codemode: { label: "Ran code", view: "code" },
 };
 
 type Tab = { id?: string; title?: string; url?: string; current?: boolean };
 
 // A collapsed row that expands to the tool's input and result.
 export function toolCard(call: ToolState): HTMLElement {
-  const card = step("tool", LABELS[call.name] ?? call.name);
+  const card = step("tool", TOOLS[call.name]?.label ?? call.name);
   updateToolCard(card, call);
   return card;
 }
@@ -51,23 +56,24 @@ export function updateToolCard(card: HTMLElement, call: ToolState) {
 function summaryArg(call: ToolState): string {
   const input = call.input;
   const details = record(call.details);
-  switch (call.name) {
-    case "list_tabs":
+  switch (TOOLS[call.name]?.view) {
+    case "tabs":
       return Array.isArray(call.details) ? `${call.details.length} tab${call.details.length === 1 ? "" : "s"}` : "";
-    case "read_tab":
+    case "tab":
       return str(details?.title) || host(str(input.url)) || (str(input.id) ? "tab" : "current tab");
-    case "open_tab":
+    case "opened_tab":
       return host(str(details?.url) || str(input.url));
-    case "view_image":
+    case "image":
       return `image ${typeof input.image === "number" ? input.image : "?"}${str(details?.title) ? ` on ${str(details?.title)}` : ""}`;
-    case "browser_exec":
-    case "ardia_exec":
-    case "codemode":
-      return firstLine(str(input.code));
-    case "grep":
-    case "find":
+    case "code":
+      return firstLine(str(input.code)) || str(input.method) || sent(input);
+    case "search":
       return str(input.pattern);
-    default:
+    case "shell":
+    case "write":
+    case "edit":
+    case "files":
+    case undefined:
       return firstLine(str(input.command) || str(input.path) || str(input.pattern) || str(input.url) || "");
   }
 }
@@ -78,40 +84,46 @@ function bodyFor(call: ToolState): Node[] {
   const result = call.result ?? call.output ?? "";
   if (call.status === "error") return [...inputView(call), output(result, "error")];
 
-  switch (call.name) {
-    case "bash":
+  switch (TOOLS[call.name]?.view) {
+    case "shell":
       return [code(`$ ${str(input.command)}`), ...(result ? [output(result)] : [])];
-    case "browser_exec":
-    case "ardia_exec":
-    case "codemode":
-      return [code(str(input.code)), ...(result ? [output(result)] : [])];
+    case "code":
+      return [code(sent(input)), ...(result ? [output(result)] : [])];
     case "write":
       return [code(str(input.content))];
     case "edit": {
       const patch = str(details?.patch);
       return patch ? [diff(patch)] : [...inputView(call), ...(result ? [output(result)] : [])];
     }
-    case "list_tabs":
+    case "tabs":
       return Array.isArray(call.details) ? [tabList(call.details as Tab[])] : result ? [output(result)] : [];
-    case "open_tab":
+    case "opened_tab":
       return details ? [tabList([details])] : [];
-    case "read_tab": {
+    case "tab": {
       if (!details) return result ? [output(result)] : [];
-      // read_tab's text starts with the title and URL (src/agent/extension),
+      // read_tab's text starts with the title and URL (each target's agent extension),
       // which the tab row shows.
       const tab = details as Tab;
       const header = `${tab.title}\n${tab.url}\n\n`;
       const text = result.startsWith(header) ? result.slice(header.length) : result;
       return [tabList([tab]), ...(text.trim() ? [output(text)] : [])];
     }
-    case "read":
-    case "grep":
-    case "find":
-    case "ls":
+    case "search":
+    case "files":
       return result ? [output(result)] : [];
-    default:
+    case "image":
+    case undefined:
       return [...inputView(call), ...(result ? [output(result)] : [])];
   }
+}
+
+// What a code tool sent: its code, or for browser_exec, a CDP command and
+// its params, or closing a tab.
+function sent(input: Record<string, unknown>): string {
+  if (str(input.code)) return str(input.code);
+  if (str(input.method)) return input.params ? `${str(input.method)} ${JSON.stringify(input.params, null, 2)}` : str(input.method);
+  if (input.close === true) return `close tab ${str(input.id)}`;
+  return "";
 }
 
 // The input as `key  value` rows, for tools without their own view.

@@ -1,18 +1,31 @@
 import { PANEL_PORT, type PanelRequest, type SettingsAnswers, type SettingsRequest } from "../shared";
 import * as pi from "./pi-session";
 import * as settings from "./settings";
+import { setTarget, type BackgroundTarget } from "./target";
 
-// Clicking the toolbar icon opens the side panel.
-chrome.runtime.onInstalled.addListener(() => {
-  void chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
-});
+// The service worker, started by each target's background entry with its
+// browser target.
+export function startBackground(target: BackgroundTarget): void {
+  setTarget(target);
 
-chrome.runtime.onConnect.addListener((port) => {
-  if (port.name !== PANEL_PORT) return;
-  void pi.attachPanel(port);
-  void pi.start();
-  port.onMessage.addListener((req: PanelRequest) => void handle(req));
-});
+  // Clicking the toolbar icon opens the side panel.
+  chrome.runtime.onInstalled.addListener(() => {
+    void chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+  });
+
+  chrome.runtime.onConnect.addListener((port) => {
+    if (port.name !== PANEL_PORT) return;
+    void pi.attachPanel(port);
+    void pi.start();
+    port.onMessage.addListener((req: PanelRequest) => void handle(req));
+  });
+
+  // The settings screen's questions. Answered asynchronously (return true).
+  chrome.runtime.onMessage.addListener((req: SettingsRequest, _sender, respond) => {
+    void answer(req).then(respond);
+    return true;
+  });
+}
 
 // The panel's requests, over its port.
 function handle(req: PanelRequest) {
@@ -37,12 +50,6 @@ function handle(req: PanelRequest) {
       return pi.setThinkingLevel(req.level);
   }
 }
-
-// The settings screen's questions. Answered asynchronously (return true).
-chrome.runtime.onMessage.addListener((req: SettingsRequest, _sender, respond) => {
-  void answer(req).then(respond);
-  return true;
-});
 
 async function answer(req: SettingsRequest) {
   switch (req.kind) {
