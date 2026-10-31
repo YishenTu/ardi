@@ -7,6 +7,10 @@ import type { BridgeEvent, BridgePart } from "./protocol";
 // at most 3 UTF-8 bytes, so parts of this many characters stay well under.
 const PART_CHARS = 256 * 1024;
 
+// Set once the bridge is exiting: what was sent before still goes out, but
+// nothing can be written after it (a notice behind the fatal error, say).
+let closing = false;
+
 // Sends an event, split into parts when it's too big for one message.
 export function sendToExtension(event: BridgeEvent): void {
   const json = JSON.stringify(event);
@@ -26,10 +30,20 @@ function isHighSurrogate(code: number): boolean {
 }
 
 function write(json: string): void {
+  if (closing) return;
   const body = Buffer.from(json, "utf8");
   const header = Buffer.alloc(4);
   header.writeUInt32LE(body.length, 0);
   process.stdout.write(Buffer.concat([header, body]));
+}
+
+// Exits once everything sent has reached the extension. process.exit alone
+// drops output still queued for a reader that's behind.
+export function exitAfterFlush(code: number): void {
+  if (closing) return;
+  closing = true;
+  process.exitCode = code;
+  process.stdout.end(() => process.exit(code));
 }
 
 export function onExtensionMessage(onMessage: (message: unknown) => void, onEnd: () => void): void {

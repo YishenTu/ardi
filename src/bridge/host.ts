@@ -3,7 +3,7 @@
 // written by the installer) when the extension connects, and closes our stdin
 // when it disconnects. Runs on Node.
 
-import { onExtensionMessage, sendToExtension } from "./nativeMessaging";
+import { exitAfterFlush, onExtensionMessage, sendToExtension } from "./nativeMessaging";
 import { checkPi, type PiTarget } from "./launch";
 import { PiSession } from "./PiSession";
 import { RELAY_TOKEN_ENV, RELAY_URL_ENV, type BridgeEvent, type BridgeRequest, type BrowserReply } from "./protocol";
@@ -31,7 +31,7 @@ export async function runBridge(target: BridgeTarget): Promise<void> {
     process.env[RELAY_URL_ENV] = relay.url;
     process.env[RELAY_TOKEN_ENV] = relay.token;
   }
-  const session = new PiSession(target, (event: BridgeEvent) => sendToExtension(event));
+  const session = new PiSession(target, (event: BridgeEvent) => sendToExtension(event), exitAfterFlush);
 
   onExtensionMessage(
     (message) => {
@@ -59,7 +59,7 @@ export async function runBridge(target: BridgeTarget): Promise<void> {
     },
     () => {
       relay?.dispose();
-      void session.shutdown().finally(() => process.exit(0));
+      void session.shutdown().finally(() => exitAfterFlush(0));
     },
   );
 }

@@ -27,13 +27,15 @@ export class PiSession {
   private ready: Promise<void> | null = null;
   private models: ModelInfo[] = [];
   private commands: PiCommand[] = [];
-  // Set once the browser disconnects: closing pi's stdin then fails its
-  // pending requests, which is expected, not fatal.
+  // Set once the browser disconnects, or after a fatal error: closing pi's
+  // stdin then fails its pending requests, which is expected, not fatal.
   private stopping = false;
 
   constructor(
     private readonly target: PiTarget,
     private readonly emit: (event: BridgeEvent) => void,
+    // Called after a fatal error is sent: the bridge can't go on.
+    private readonly exit: (code: number) => void = (code) => process.exit(code),
   ) {}
 
   start(sessionFile?: string, piPath?: string): void {
@@ -158,8 +160,9 @@ export class PiSession {
 
   private fail(error: unknown, stderr?: string): void {
     if (this.stopping) return;
+    this.stopping = true;
     this.emit({ type: "fatal", message: [errorMessage(error), stderr].filter(Boolean).join("\n") });
-    process.exit(1);
+    this.exit(1);
   }
 }
 
