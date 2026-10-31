@@ -83,7 +83,8 @@ test("both distributions build and install without overwriting each other", asyn
         expect(enabled).toEqual(expect.arrayContaining(registered.map(t => t.name)));
         expect(registered.map(t => t.name)).toContain(target === "chrome" ? "browser_exec" : "ardia_exec");
         expect(enabled).not.toContain(target === "chrome" ? "ardia_exec" : "browser_exec");
-        const reference = join(out, "agent/references", target === "chrome" ? "chrome.md" : "ardia.md");
+        // The path as pi loads the extension (Windows may spell `out` in 8.3 form).
+        const reference = join(extension, "..", "references", target === "chrome" ? "chrome.md" : "ardia.md");
         expect(registered.some(t => t.description.includes(reference))).toBe(true);
         expect(existsSync(reference)).toBe(true);
         expect(existsSync(join(home, ".ardi/references"))).toBe(false);
