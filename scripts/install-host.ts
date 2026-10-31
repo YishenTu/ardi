@@ -29,9 +29,9 @@ const { nativeHost, nativeHostLocations, install } = JSON.parse(readFileSync(joi
   nativeHostLocations: Partial<Record<string, string>>;
   install: string[];
 };
+if (!nativeHostLocations[platform()]) throw new Error(`Ardi for ${target} doesn't support ${platform()} yet.`);
 // Tests point this at a throwaway key so they never replace a real registration.
-const nativeHostLocation = (windows && process.env.ARDI_NATIVE_HOSTS_KEY) || nativeHostLocations[platform()];
-if (!nativeHostLocation) throw new Error(`Ardi for ${target} doesn't support ${platform()} yet.`);
+const nativeHostLocation = (windows && process.env.ARDI_NATIVE_HOSTS_KEY) || nativeHostLocations[platform()]!;
 // Chrome's extension ID: first 32 hex chars of sha256(public key), a-p.
 const manifest = JSON.parse(readFileSync(join(source, "manifest.json"), "utf8")) as { key: string };
 const extensionId = createHash("sha256").update(Buffer.from(manifest.key, "base64")).digest("hex").slice(0, 32)
