@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, setSystemTime, test } from "bun:test";
 
-import ardi from "../../../../src/agent/extension/index";
+import ardi from "../../../../src/agent/extension/chrome";
 import { buildPiLaunchSpec } from "../../../../src/bridge/launch";
 
 let handlers: Record<string, (event: any) => unknown>;

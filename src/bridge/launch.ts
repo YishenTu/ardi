@@ -1,10 +1,11 @@
 // How Ardi launches pi. Inspired by Claudian's PiLaunchSpecBuilder.
 
 import { execFile } from "node:child_process";
-import { existsSync, lstatSync, mkdirSync, readlinkSync, statSync, symlinkSync, unlinkSync } from "node:fs";
+import { existsSync, mkdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
+import { BUILD_TARGET } from "../build-target";
 import type { PiCheck } from "./protocol";
 
 // pi always runs here. Its sessions are stored per working folder, so a
@@ -16,12 +17,12 @@ export const WORK_DIR = join(homedir(), ".ardi");
 export const SKILLS_DIR = join(WORK_DIR, ".agents", "skills");
 
 // Ardi's agent setup, versioned in this repo under src/agent/ and copied
-// into dist/agent/ by the build; the bridge uses the copy next to it.
+// into dist/<target>/agent/ by the build; the bridge uses the copy next to it.
 const AGENT_DIR = resolve(import.meta.dirname, "../agent");
 
 // Every built-in tool plus Ardi's browser tools. Named explicitly so the
 // user's own pi `defaultTools` setting doesn't change what Ardi gets.
-const TOOLS = ["read", "bash", "edit", "write", "grep", "find", "ls", "codemode", "list_tabs", "read_tab", "view_image", "open_tab", "ardia_exec"];
+const TOOLS = ["read", "bash", "edit", "write", "grep", "find", "ls", "codemode", "list_tabs", "read_tab", "view_image", "open_tab"];
 
 export interface PiLaunchSpec {
   command: string;
@@ -41,8 +42,8 @@ export function buildPiLaunchSpec(sessionFile?: string, piPath?: string): PiLaun
     "--mode", "rpc",
     "--system-prompt", join(AGENT_DIR, "system-prompt.md"),
     "--no-extensions",
-    "--extension", join(AGENT_DIR, "extension/index.ts"),
-    "--tools", TOOLS.join(","),
+    "--extension", join(AGENT_DIR, "extension", BUILD_TARGET === "chrome" ? "chrome.ts" : "ardia.ts"),
+    "--tools", [...TOOLS, BUILD_TARGET === "chrome" ? "browser_exec" : "ardia_exec"].join(","),
     "--no-skills",
     "--skill", SKILLS_DIR,
     "--no-prompt-templates",
@@ -76,15 +77,7 @@ export function checkPi(piPath?: string): Promise<PiCheck> {
   });
 }
 
-// ~/.ardi/references -> the agent's references, so tools can point pi at
-// references/*.md relative to its working folder. A link left by an older
-// checkout or build location is replaced.
+// User-owned instructions and skills are shared by both distributions.
 export function prepareWorkDir(): void {
   mkdirSync(SKILLS_DIR, { recursive: true });
-  const refs = join(WORK_DIR, "references");
-  const target = join(AGENT_DIR, "references");
-  const link = lstatSync(refs, { throwIfNoEntry: false });
-  if (link?.isSymbolicLink() && readlinkSync(refs) !== target) unlinkSync(refs);
-  else if (link) return;
-  symlinkSync(target, refs);
 }

@@ -13,6 +13,7 @@ const LABELS: Record<string, string> = {
   view_image: "Viewed image",
   open_tab: "Opened tab",
   ardia_exec: "Ran in browser",
+  browser_exec: "Ran in browser",
   read: "Read",
   write: "Wrote",
   edit: "Edited",
@@ -59,6 +60,7 @@ function summaryArg(call: ToolState): string {
       return host(str(details?.url) || str(input.url));
     case "view_image":
       return `image ${typeof input.image === "number" ? input.image : "?"}${str(details?.title) ? ` on ${str(details?.title)}` : ""}`;
+    case "browser_exec":
     case "ardia_exec":
     case "codemode":
       return firstLine(str(input.code));
@@ -79,6 +81,7 @@ function bodyFor(call: ToolState): Node[] {
   switch (call.name) {
     case "bash":
       return [code(`$ ${str(input.command)}`), ...(result ? [output(result)] : [])];
+    case "browser_exec":
     case "ardia_exec":
     case "codemode":
       return [code(str(input.code)), ...(result ? [output(result)] : [])];

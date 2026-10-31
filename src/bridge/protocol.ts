@@ -1,9 +1,11 @@
 // Messages between the extension's background and the bridge, over Chrome
 // native messaging.
+import type { BrowserReply, BrowserRequest } from "../browser-protocol";
 import type { ChatChunk, ChatMessage, ModelState, PiCommand, ThinkingLevel } from "../chat";
 
 // Extension -> bridge.
 export type BridgeRequest =
+  | BrowserReply
   // Starts pi (`piPath`, or the installed pi). Resumes `sessionFile` if it
   // exists; otherwise pi starts a new session.
   | { type: "start"; sessionFile?: string; piPath?: string }
@@ -11,7 +13,7 @@ export type BridgeRequest =
   | { type: "check_pi"; piPath?: string }
   // Moves the running pi to `sessionFile` if it exists, otherwise to a new session. Answered with `ready`.
   | { type: "open"; sessionFile?: string }
-  | { type: "prompt"; text: string }
+  | { type: "prompt"; text: string; promptId?: string }
   | { type: "abort" }
   | { type: "compact" }
   | { type: "set_model"; provider: string; modelId: string }
@@ -22,6 +24,9 @@ export type PiCheck = { command: string; version?: string; error?: string };
 
 // Bridge -> extension.
 export type BridgeEvent =
+  | { type: "prompt_result"; promptId: string; started: boolean }
+  | { type: "browser_cancel"; id: string }
+  | { type: "browser_request"; id: string; request: BrowserRequest }
   // A saved session's history, read from its file as soon as `start` or
   // `open` asks for it, so the chat shows while pi starts or switches.
   | { type: "history"; sessionFile: string; history: ChatMessage[] }

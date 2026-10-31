@@ -11,6 +11,9 @@ import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const args = process.argv.slice(2);
+if (process.env.FAKE_PI_LAUNCH_LOG) writeFileSync(process.env.FAKE_PI_LAUNCH_LOG, JSON.stringify({
+  args, cwd: process.cwd(), relay: Boolean(process.env.ARDI_BROWSER_URL),
+}));
 if (args.includes("--version")) {
   console.log("0.0.0-fake");
   process.exit(0);
@@ -66,8 +69,9 @@ function handle(command: Record<string, any>): unknown {
       thinkingLevel = command.level;
       return {};
     case "prompt":
+      if (command.message === "handled:command") return { disposition: "handled" };
       // Answers once the prompt is accepted; the run streams as events.
-      queueMicrotask(() => run(command.message));
+      queueMicrotask(() => void run(command.message));
       return { disposition: "started" };
     default:
       return {};
@@ -76,7 +80,15 @@ function handle(command: Record<string, any>): unknown {
 
 // Echoes the prompt back as the reply, with pi's full event sequence for a
 // one-turn run.
-function run(text: string) {
+async function run(text: string) {
+  if (text === "browser:list") {
+    const response = await fetch(process.env.ARDI_BROWSER_URL!, {
+      method: "POST", headers: { Authorization: `Bearer ${process.env.ARDI_BROWSER_TOKEN}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ op: "list" }),
+    });
+    const reply = await response.json() as { result: unknown };
+    text = JSON.stringify(reply.result);
+  }
   const reply = `echo: ${text}`;
   const user = { role: "user", content: text, timestamp: Date.now() };
   save(user);
@@ -101,7 +113,9 @@ process.stdin.on("data", (chunk: string) => {
   for (let end = buffer.indexOf("\n"); end >= 0; end = buffer.indexOf("\n")) {
     const command = JSON.parse(buffer.slice(0, end));
     buffer = buffer.slice(end + 1);
-    send({ type: "response", id: command.id, command: command.type, success: true, data: handle(command) });
+    if (command.type === "prompt" && command.message === "reject:busy") {
+      send({ type: "response", id: command.id, command: command.type, success: false, error: "Agent is already streaming. Specify streamingBehavior to queue a message." });
+    } else send({ type: "response", id: command.id, command: command.type, success: true, data: handle(command) });
   }
 });
 process.stdin.on("end", () => process.exit(0));

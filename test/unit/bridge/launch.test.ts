@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readlinkSync, rmSync, symlinkSync } from "node:fs";
+import { mkdirSync, readlinkSync, rmSync, symlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -40,9 +40,9 @@ describe("buildPiLaunchSpec", () => {
     expect(spec.args).not.toContain("--no-context-files");
     // Ardi's own prompt, extension and skills come back in explicitly.
     expect(spec.args[spec.args.indexOf("--system-prompt") + 1]).toEndWith("src/agent/system-prompt.md");
-    expect(spec.args[spec.args.indexOf("--extension") + 1]).toEndWith("src/agent/extension/index.ts");
+    expect(spec.args[spec.args.indexOf("--extension") + 1]).toEndWith("src/agent/extension/chrome.ts");
     expect(spec.args[spec.args.indexOf("--skill") + 1]).toBe(join(WORK_DIR, ".agents", "skills"));
-    expect(spec.args[spec.args.indexOf("--tools") + 1].split(",")).toContain("ardia_exec");
+    expect(spec.args[spec.args.indexOf("--tools") + 1].split(",")).toContain("browser_exec");
   });
 
   test("resumes a session only when given one", () => {
@@ -53,14 +53,13 @@ describe("buildPiLaunchSpec", () => {
 });
 
 describe("prepareWorkDir", () => {
-  test("links ~/.ardi/references to the running agent's references, replacing a link left from an older location", () => {
+  test("preserves an existing references link owned by an older installation", () => {
     mkdirSync(WORK_DIR, { recursive: true });
     const refs = join(WORK_DIR, "references");
     rmSync(refs, { force: true });
     symlinkSync("/old/checkout/src/agent/references", refs);
     prepareWorkDir();
     const target = readlinkSync(refs);
-    expect(target).toEndWith("src/agent/references");
-    expect(existsSync(join(target, "ardia.md"))).toBe(true);
+    expect(target).toBe("/old/checkout/src/agent/references");
   });
 });

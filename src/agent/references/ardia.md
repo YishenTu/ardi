@@ -8,7 +8,7 @@
 - `tabs`: every web page tab when the run starts, the user's own included, plus the ones `new_tab` opens.
 - `new_tab(url, background=True)`: opens a tab, waits for the page to load and returns it. `background=False` switches the user to it.
 - `js(expression, tab=None)`: evaluates JavaScript and returns its value (awaiting promises; raises on a JavaScript error). Pass `tab=t` for your own tab; without it, `js` uses the user's tab, else the last tab you opened.
-- `browser` (pydoll `Chrome`), `By`, `Key`, `asyncio` and the rest of pydoll's exports. Full API: `references/pydoll.md`.
+- `browser` (pydoll `Chrome`), `By`, `Key`, `asyncio` and the rest of pydoll's exports. Full API: the sibling `pydoll.md` file (its absolute path is in the ardia_exec tool description).
 
 ## Tab ids
 

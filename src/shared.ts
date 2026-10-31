@@ -4,7 +4,7 @@ export type { PiCheck };
 import type { ChatChunk, ChatMessage, ModelState, PiCommand, ThinkingLevel } from "./chat";
 
 // Name of the native messaging host registered by `bun run host:install`.
-export const NATIVE_HOST = "com.ardi.pi";
+export { NATIVE_HOST } from "./build-target";
 
 // Port name the side panel uses to connect to the background.
 export const PANEL_PORT = "sidepanel";

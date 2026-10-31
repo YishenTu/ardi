@@ -44,10 +44,12 @@ export class PiSession {
     this.ready = this.ready.then(() => this.switchTo(sessionFile)).catch((error: unknown) => this.fail(error));
   }
 
-  async prompt(text: string): Promise<void> {
+  async prompt(text: string, promptId?: string): Promise<void> {
     await this.ready;
-    // Resolves when pi accepts the prompt; the run itself streams as events.
-    await this.transport?.request("prompt", { message: text }).catch((error: unknown) => this.notice(error));
+    // Only a newly started run restores browser permission. Rejected, queued
+    // or handled input must not unlock browser calls from an earlier run.
+    const accepted = await this.transport?.request<{ disposition: string }>("prompt", { message: text }).catch((error: unknown) => { this.notice(error); return undefined; });
+    if (promptId) this.emit({ type: "prompt_result", promptId, started: accepted?.disposition === "started" });
   }
 
   async abort(): Promise<void> {

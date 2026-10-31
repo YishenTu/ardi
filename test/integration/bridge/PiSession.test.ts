@@ -132,3 +132,15 @@ describe("PiSession", () => {
     expect(readies()).toEqual([]);
   });
 });
+
+test("browser permission results distinguish started, rejected and handled prompts", async () => {
+  startSession();
+  await ready(0);
+  await session.prompt("reject:busy", "rejected");
+  expect(events).toContainEqual({ type: "prompt_result", promptId: "rejected", started: false });
+  expect(chunks()).toContainEqual({ type: "notice", content: expect.stringContaining("already streaming"), level: "error" });
+  await session.prompt("handled:command", "handled");
+  expect(events).toContainEqual({ type: "prompt_result", promptId: "handled", started: false });
+  await session.prompt("accepted", "accepted");
+  expect(events).toContainEqual({ type: "prompt_result", promptId: "accepted", started: true });
+});

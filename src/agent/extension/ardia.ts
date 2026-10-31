@@ -1,17 +1,14 @@
-// pi extension: Ardi's browser tools. Each tool runs `ardia exec` against the
-// user's running Ardia. Loaded by the bridge with `--extension`; pi compiles it
-// on the fly (jiti) and provides the `@earendil-works/pi-coding-agent` and
-// `typebox` imports.
-//
-// Tabs are identified by their CDP target ID (`_target_id`), which stays the
-// same across `ardia exec` runs, unlike a tab's position.
+// Ardia tool entrypoint. Browser commands always use the Ardia CLI.
+// Pi loads this from dist/ardia/agent and provides its own extension dependencies.
 
 import { execFile } from "node:child_process";
 import { resizeImage, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { resolve } from "node:path";
+import { registerDate } from "./date";
+import { MAX_CHARS, READ_PAGE, locateImage, text, truncate, fetchImage } from "./page";
 
 // Output pi sees from one call. Longer page text is paged with `offset`.
-const MAX_CHARS = 20_000;
 const EXEC_TIMEOUT_S = 120;
 
 class ArdiaError extends Error {}
@@ -57,68 +54,8 @@ const TAB_INFO = `{"id": t._target_id, "title": await t.title(), "url": await t.
 
 type TabInfo = { id: string; title: string; url: string; current?: boolean };
 
-// The page's visible text, with a marker where each content image sits.
-// Marked images get a `data-ardi-image` number so view_image can find them
-// again. The markers are text nodes added for the one innerText read and
-// removed in the same task, so the page never paints them.
-const READ_PAGE = `(() => {
-  if (!document.body) return "";
-  for (const img of document.querySelectorAll("img[data-ardi-image]")) delete img.dataset.ardiImage;
-  const marks = [];
-  for (const img of document.images) {
-    const box = img.getBoundingClientRect();
-    if (!img.naturalWidth || box.width < 150 || box.height < 100 || !img.checkVisibility()) continue;
-    const n = marks.length + 1;
-    img.dataset.ardiImage = String(n);
-    const alt = img.alt.trim().slice(0, 80);
-    const mark = document.createTextNode(" [image " + n + ": " + img.naturalWidth + "×" + img.naturalHeight + (alt ? ', "' + alt + '"' : "") + "] ");
-    (img.parentElement?.tagName === "PICTURE" ? img.parentElement : img).before(mark);
-    marks.push(mark);
-  }
-  const text = document.body.innerText;
-  for (const mark of marks) mark.remove();
-  return text;
-})()`;
-
-// Where image n is on the page, in page coordinates, and the scale that
-// captures it near its own resolution (at most 2x, and 2000 px on a side).
-const locateImage = (n: number) => `(() => {
-  const img = document.querySelector('img[data-ardi-image="${n}"]');
-  if (!img) return null;
-  const box = img.getBoundingClientRect();
-  const scale = Math.max(0.1, Math.min(2, img.naturalWidth / box.width, 2000 / Math.max(box.width, box.height)));
-  const inView = box.top >= 0 && box.bottom <= innerHeight && box.left >= 0 && box.right <= innerWidth;
-  return { x: box.left + scrollX, y: box.top + scrollY, width: box.width, height: box.height, scale, inView, src: img.currentSrc };
-})()`;
-
-const text = (value: string, details?: unknown) => ({ content: [{ type: "text" as const, text: value }], details });
-
-function truncate(value: string, max = MAX_CHARS): string {
-  return value.length <= max ? value : `${value.slice(0, max)}\n\n[Output truncated: ${value.length} chars, showing the first ${max}.]`;
-}
-
-// Fetches an image the way its page would, with the page as the referer
-// (many image hosts refuse requests without one). No cookies, so an image
-// only the signed-in user can load fails; the error says what to do.
-async function fetchImage(src: string, page: string, signal?: AbortSignal): Promise<{ bytes: Buffer; mimeType: string }> {
-  const failed = (why: string) => new ArdiaError(`Couldn't load the image (${why}). Ask the user to scroll it into view, then call view_image again.`);
-  const response = await fetch(src, { headers: { Referer: page }, signal }).catch((error: Error) => {
-    throw failed(error.message);
-  });
-  const mimeType = response.headers.get("content-type")?.split(";")[0] ?? "";
-  if (!response.ok) throw failed(`HTTP ${response.status}`);
-  if (!mimeType.startsWith("image/")) throw failed(`got ${mimeType || "no content type"}`);
-  return { bytes: Buffer.from(await response.arrayBuffer()), mimeType };
-}
-
 export default function (pi: ExtensionAPI) {
-  // pi's prompt has no date, so the model would go by its training data and
-  // could take recent events for future ones. It's a section of its own, so
-  // the prompt changes once a day, not every run.
-  pi.on("before_agent_start", (event) => {
-    const today = new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
-    event.systemPromptOptions.sections = { ...event.systemPromptOptions.sections, date: `Today is ${today}.` };
-  });
+  registerDate(pi);
 
   pi.registerTool({
     name: "list_tabs",
@@ -224,7 +161,7 @@ if box["inView"]:
     name: "ardia_exec",
     label: "Run in browser",
     description:
-      "Run Python against the user's browser with `ardia exec`, for anything the other tools don't cover (click, type, wait, screenshots, JavaScript, several tabs at once). Read references/ardia.md before first use. The last expression is returned (strings as is, anything else as repr). Tab ids from the other tools match `t._target_id`. For a change to a site that should last across visits (how it looks or behaves), write a userscript with `ardia scripts` in bash instead (`ardia scripts --help`).",
+      `Run Python against the user's browser with ardia exec, for anything the other tools don't cover (click, type, wait, screenshots, JavaScript, several tabs at once). Read ${resolve(import.meta.dirname, "../references/ardia.md")} before first use; the full pydoll API is at ${resolve(import.meta.dirname, "../references/pydoll.md")}. The last expression is returned (strings as is, anything else as repr). Tab ids from the other tools match t._target_id. For a change to a site that should last across visits (how it looks or behaves), write a userscript with ardia scripts in bash instead (ardia scripts --help).`,
     parameters: Type.Object({
       code: Type.String({ description: "Python with top-level await; `tab`, `tabs`, `new_tab`, `js` and pydoll are in scope" }),
       timeout: Type.Optional(Type.Number({ description: `Seconds before the run is stopped (default ${EXEC_TIMEOUT_S})`, minimum: 1 })),
