@@ -98,3 +98,28 @@ test("disconnecting while pi is still starting exits cleanly and stops pi", asyn
     delete process.env.FAKE_PI_STALL;
   }
 });
+
+// A fatal error is the last thing the extension hears, so it must arrive even
+// when the extension is still reading earlier output.
+test("a fatal error reaches a slow reader before the bridge exits", async () => {
+  const log = join(homedir(), "slow-reader-launch.json");
+  process.env.FAKE_PI_LAUNCH_LOG = log;
+  try {
+    const events = startBridge();
+    bridge.stdin.write(frame({ type: "start", piPath: FAKE_PI }));
+    await waitFor(() => expect(events.map((e) => e.type)).toContain("ready"), 10_000);
+    const { pid } = JSON.parse(readFileSync(log, "utf8")) as { pid: number };
+    const exited = new Promise<number | null>((done) => bridge.on("exit", done));
+    // Stop reading while megabytes of reply queue up, then lose pi.
+    bridge.stdout.pause();
+    bridge.stdin.write(frame({ type: "prompt", text: "x".repeat(4 * 1024 * 1024) }));
+    await Bun.sleep(500);
+    process.kill(pid);
+    await Bun.sleep(500);
+    bridge.stdout.resume();
+    expect(await exited).toBe(1);
+    await waitFor(() => expect(events.map((e) => e.type)).toContain("fatal"));
+  } finally {
+    delete process.env.FAKE_PI_LAUNCH_LOG;
+  }
+}, 20_000);

@@ -32,6 +32,13 @@ function write(json: string): void {
   process.stdout.write(Buffer.concat([header, body]));
 }
 
+// Exits once everything sent has reached the extension. process.exit alone
+// drops output still queued for a reader that's behind.
+export function exitAfterFlush(code: number): void {
+  process.exitCode = code;
+  process.stdout.end(() => process.exit(code));
+}
+
 export function onExtensionMessage(onMessage: (message: unknown) => void, onEnd: () => void): void {
   let buffer = Buffer.alloc(0);
   process.stdin.on("data", (chunk: Buffer) => {
