@@ -116,6 +116,9 @@ test("a fatal error reaches a slow reader before the bridge exits", async () => 
     await Bun.sleep(500);
     process.kill(pid);
     await Bun.sleep(500);
+    // Input after the failure must not write behind the fatal error.
+    bridge.stdin.write(frame({ type: "prompt", text: "after" }));
+    await Bun.sleep(200);
     bridge.stdout.resume();
     expect(await exited).toBe(1);
     await waitFor(() => expect(events.map((e) => e.type)).toContain("fatal"));
