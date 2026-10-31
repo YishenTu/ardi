@@ -75,7 +75,7 @@ Both versions share instructions and skills in `~/.ardi/`; chats and settings st
 
 ## Contributing
 
-Contributor and agent guidelines are in [`AGENTS.md`](AGENTS.md). The bridge's Pi runtime is adapted from [Claudian](https://github.com/YishenTu/claudian).
+Contributor and agent guidelines are in [`AGENTS.md`](AGENTS.md).
 
 ## License
 
