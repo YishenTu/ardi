@@ -4,7 +4,7 @@
 
 <p align="center">A chat panel for the <a href="https://github.com/mantrakp04/ardia">Ardia</a> browser that runs your local <a href="https://github.com/earendil-works/pi">Pi</a> coding agent.<br>Ask about the page you're on, sort out your tabs, or have Pi click, type and read its way through the web.</p>
 
-<p align="center"><a href="#quick-start">Quick start</a> · <a href="#make-it-yours">Make it yours</a> · <a href="#develop">Develop</a> · <a href="LICENSE">MIT</a></p>
+<p align="center"><a href="#quick-start">Quick start</a> · <a href="#make-it-yours">Make it yours</a> · <a href="#contributing">Contributing</a> · <a href="LICENSE">MIT</a></p>
 
 <p align="center"><img src=".github/assets/screenshot.webp" alt="Ardi in Ardia's side panel, introducing the page the user is on"></p>
 
@@ -53,16 +53,6 @@ bun run host:install ardia
 
 In Ardia, open **Settings → Extensions → Add extensions → Load unpacked extension**, pick `dist/ardia/`, and open Ardi from the extensions menu. Keep the repository in place; this installation runs from its built files.
 
-## Chrome support
-
-Ardi now works in Chrome too. It uses the tabs and accounts you're already signed in to, with no separate browser profile or remote-debugging flags.
-
-Download `ardi-chrome-<version>.zip` from [Releases](https://github.com/YishenTu/ardi/releases), extract it, and run `bun install-host.ts chrome` from that folder. In Chrome, open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select the folder printed by the installer.
-
-If you built from source instead, run `bun run host:install chrome` and load `dist/chrome/` using the same Chrome steps. Bun and Pi are required for either installation. Chrome shows a debugging banner while Ardi is attached to a tab; it can remain after a response finishes, until you cancel control or restart Ardi. Ardia's persistent userscripts are not available in Chrome.
-
-You can use both versions together. They share your instructions and skills in `~/.ardi/`; chats and panel settings stay separate in each browser.
-
 ## Make it yours
 
 | What | Where |
@@ -75,16 +65,15 @@ You can use both versions together. They share your instructions and skills in `
 
 Rebuild after editing the prompt or tools, then reload the extension.
 
-## Develop
+## Chrome support
 
-```sh
-bun run dev        # watch Ardia; use bun run dev:chrome for Chrome
-bun run build      # typecheck and build both targets
-bun run zip        # build and create ardi-ardia.zip and ardi-chrome.zip
-bun test           # unit + integration tests, with a fake Pi and a fake Chrome
-bun run lint       # oxlint, type-aware
-bun run typecheck
-```
+Download and extract `ardi-chrome-<version>.zip` from [Releases](https://github.com/YishenTu/ardi/releases), then run `bun install-host.ts chrome` inside it. Requires Bun and Pi, as above.
+
+Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select the folder printed by the installer. For a source build, run `bun run host:install chrome` and load `dist/chrome/` instead.
+
+Both versions share instructions and skills in `~/.ardi/`; chats and settings stay separate. Chrome's debugging banner can remain after a response until you cancel control or restart Ardi. Persistent userscripts are Ardia-only.
+
+## Contributing
 
 Contributor and agent guidelines are in [`AGENTS.md`](AGENTS.md). The bridge's Pi runtime is adapted from [Claudian](https://github.com/YishenTu/claudian).
 
