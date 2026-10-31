@@ -222,16 +222,6 @@ function shufflePlaceholder() {
   input.el.dataset.placeholder = PLACEHOLDERS[Math.floor(Math.random() * PLACEHOLDERS.length)];
 }
 
-const field = input.el.parentElement!;
-
-// Stacks the pickers under the text once it no longer fits on one line
-// beside them.
-function stackPickers() {
-  field.classList.remove("stacked");
-  const lineHeight = parseFloat(getComputedStyle(input.el).lineHeight);
-  if (input.el.scrollHeight > lineHeight * 1.5) field.classList.add("stacked");
-}
-
 const slash = new SlashMenu(input, $("slash"), [
   { name: "new", description: "Start a new chat", run: () => pi.send({ kind: "new_session" }) },
   { name: "compact", description: "Summarize this chat to free up context", run: () => pi.send({ kind: "compact" }) },
@@ -260,13 +250,11 @@ input.el.addEventListener("keydown", (e) => {
   }
 });
 input.el.addEventListener("input", () => {
-  stackPickers();
   slash.update();
   void tabMenu.update();
 });
 // The caret can leave an @word without typing (arrows, clicks).
 document.addEventListener("selectionchange", () => void tabMenu.update());
-window.addEventListener("resize", stackPickers);
 document.addEventListener("keydown", (e) => {
   // An open menu takes Esc first (it closes itself).
   if (e.key === "Escape" && busy && !settings.isOpen && !document.querySelector(":popover-open")) pi.send({ kind: "abort" });

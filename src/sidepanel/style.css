@@ -355,7 +355,9 @@ a.tab-chip:hover { background: color-mix(in srgb, var(--fg) 13%, transparent); }
 }
 .field:focus-within { border-color: var(--faint); }
 .field .input {
-  flex: 1;
+  /* Sized by its text (or placeholder), so the pickers wrap below once it
+     no longer fits beside them; then it grows to the full width. */
+  flex: 1 1 auto;
   min-width: 0;
   min-height: 22px;
   margin-bottom: 1px;
@@ -368,9 +370,7 @@ a.tab-chip:hover { background: color-mix(in srgb, var(--fg) 13%, transparent); }
   cursor: text;
 }
 .field .input:empty::before { content: attr(data-placeholder); color: var(--faint); pointer-events: none; }
-.field.stacked .input { flex-basis: 100%; }
-.field.stacked .composer-bar { margin-left: auto; }
-.composer-bar { flex: none; display: flex; align-items: center; gap: 0; min-height: 24px; }
+.composer-bar { flex: none; margin-left: auto; display: flex; align-items: center; gap: 0; min-height: 24px; }
 .pill {
   display: flex;
   align-items: center;
