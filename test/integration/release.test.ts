@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
 import { waitFor } from "../support/wait";
@@ -8,6 +8,10 @@ import { fakePi } from "../support/executables";
 import { cleanUp, installEnv, LAUNCHER, startHost, unzip, withPath } from "../support/nativeHost";
 
 const windows = process.platform === "win32";
+
+function linkOrCopy(from: string, to: string): void {
+  try { linkSync(from, to); } catch { copyFileSync(from, to); }
+}
 
 const root = resolve(import.meta.dirname, "../..");
 const { version } = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
@@ -18,8 +22,9 @@ test("release installs survive deleting downloads, coexist, and preserve shared 
   const home = join(temp, "home");
   const bin = join(temp, "bin");
   mkdirSync(bin, { recursive: true });
-  // On Windows the installer pins the bun running it.
-  if (!windows) symlinkSync(process.execPath, join(bin, "bun"));
+  // The build runs bun from PATH. (On Windows the installer pins the bun running it.)
+  if (windows) linkOrCopy(process.execPath, join(bin, "bun.exe"));
+  else symlinkSync(process.execPath, join(bin, "bun"));
   fakePi(bin);
   const releaseDir = join(temp, "releases");
   const system = windows ? [join(process.env.SystemRoot ?? "C:\\Windows", "System32")] : ["/usr/bin", "/bin"];

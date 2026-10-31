@@ -64,7 +64,8 @@ export function buildPiLaunchSpec(target: PiTarget, sessionFile?: string, piPath
 // The user's pi path (`~` expanded), or the pi `host:install` found.
 // Throws if a user path isn't a file, so the error names the setting.
 export function piCommand(piPath?: string): string {
-  const path = piPath?.trim().replace(/^~(?=[\\/]|$)/, homedir());
+  const trimmed = piPath?.trim();
+  const path = trimmed && /^~(?=[\\/]|$)/.test(trimmed) ? join(homedir(), trimmed.slice(1)) : trimmed;
   if (!path) return process.env.ARDI_PI_BIN || "pi";
   if (!existsSync(path)) throw new Error(`Pi not found at ${path}. Fix the path in Settings.`);
   if (!statSync(path).isFile()) throw new Error(`${path} is not a file. Fix the path in Settings.`);

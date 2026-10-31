@@ -70,12 +70,12 @@ test("both distributions build and install without overwriting each other", asyn
         child.stdin.write(Buffer.concat([header, body]));
         await waitFor(() => expect(ready).toBe(true));
         const launch = JSON.parse(readFileSync(log, "utf8"));
-        expect(launch.cwd).toBe(realpathSync(join(home, ".ardi")));
+        expect(launch.cwd).toBe(realpathSync.native(join(home, ".ardi")));
         expect(launch.relay).toBe(target === "chrome");
         const args: string[] = launch.args;
         const extension = args[args.indexOf("--extension") + 1];
         const registered: { name: string; description: string }[] = [];
-        expect(extension).toBe(realpathSync(join(out, "agent/extension")));
+        expect(extension).toBe(realpathSync.native(join(out, "agent/extension")));
         const { default: register } = await import(join(extension, "index.js"));
         register({ on() {}, registerTool(tool: { name: string; description: string }) { registered.push(tool); } });
         const enabled = args[args.indexOf("--tools") + 1].split(",");

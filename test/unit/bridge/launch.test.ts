@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import { buildPiLaunchSpec, piCommand, prepareWorkDir, SHELL_TOOL, WORK_DIR } from "../../../src/bridge/launch";
 
@@ -63,9 +63,9 @@ describe("prepareWorkDir", () => {
     mkdirSync(WORK_DIR, { recursive: true });
     const refs = join(WORK_DIR, "references");
     rmSync(refs, { force: true });
-    symlinkSync("/old/checkout/src/agent/references", refs);
+    const old = resolve("/old/checkout/src/agent/references");
+    symlinkSync(old, refs);
     prepareWorkDir();
-    const target = readlinkSync(refs);
-    expect(target).toBe("/old/checkout/src/agent/references");
+    expect(readlinkSync(refs)).toBe(old);
   });
 });
