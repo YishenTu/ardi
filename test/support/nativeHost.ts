@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { platform } from "node:os";
 import { join } from "node:path";
+import { windowsTar } from "../../scripts/lib/zip";
 
 const windows = platform() === "win32";
 
@@ -43,15 +44,15 @@ export function startHost(launcher: string, env: NodeJS.ProcessEnv): ChildProces
   return spawn(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", `""${launcher}" chrome-extension://test/ --parent-window=0"`], { env, windowsVerbatimArguments: true, windowsHide: true });
 }
 
-// Extracts a zip; Windows' tar.exe reads zip files.
+// Extracts a zip; Windows' bsdtar reads zip files.
 export function unzip(archive: string, dest: string): void {
-  const result = windows ? spawnSync("tar.exe", ["-x", "-f", archive, "-C", dest], { encoding: "utf8" }) : spawnSync("unzip", ["-q", archive, "-d", dest], { encoding: "utf8" });
+  const result = windows ? spawnSync(windowsTar, ["-x", "-f", archive, "-C", dest], { encoding: "utf8" }) : spawnSync("unzip", ["-q", archive, "-d", dest], { encoding: "utf8" });
   if (result.status !== 0) throw new Error(`Could not extract ${archive}: ${result.stderr}`);
 }
 
 // One file from a zip.
 export function unzipFile(archive: string, file: string): string {
-  const result = windows ? spawnSync("tar.exe", ["-x", "-O", "-f", archive, file], { encoding: "utf8" }) : spawnSync("unzip", ["-p", archive, file], { encoding: "utf8" });
+  const result = windows ? spawnSync(windowsTar, ["-x", "-O", "-f", archive, file], { encoding: "utf8" }) : spawnSync("unzip", ["-p", archive, file], { encoding: "utf8" });
   if (result.status !== 0) throw new Error(`Could not read ${file} from ${archive}: ${result.stderr}`);
   return result.stdout;
 }
