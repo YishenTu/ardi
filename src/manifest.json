@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Chat with the local pi coding agent from Chrome's side panel",
   "minimum_chrome_version": "116",
   "icons": {
