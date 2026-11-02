@@ -2,7 +2,7 @@ name: Release
 
 on:
   push:
-    tags: ['v*']
+    tags: ['[0-9]+.[0-9]+.[0-9]+']
 
 permissions:
   contents: read
@@ -26,7 +26,7 @@ jobs:
       - name: Check release version
         env:
           RELEASE_TAG: ${{ github.ref_name }}
-        run: bun -e 'const p = await Bun.file("package.json").json(); if (process.env.RELEASE_TAG !== `v${p.version}`) throw new Error("Tag must match package.json version");'
+        run: bun -e 'const p = await Bun.file("package.json").json(); if (process.env.RELEASE_TAG !== p.version) throw new Error("Tag must match package.json version");'
       - run: bun run lint
       - run: bun test --randomize
       - run: bun run release:package

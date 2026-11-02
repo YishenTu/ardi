@@ -43,6 +43,8 @@ body {
 }
 button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
 svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+/* Drawn on a 24px grid; this matches the 1.5 stroke of the 16px icons. */
+svg.gear { stroke-width: 2.2; }
 
 /* Header */
 
@@ -371,41 +373,45 @@ a.tab-chip:hover { background: color-mix(in srgb, var(--fg) 13%, transparent); }
 }
 .field .input:empty::before { content: attr(data-placeholder); color: var(--faint); pointer-events: none; }
 .composer-bar { flex: none; margin-left: auto; display: flex; align-items: center; gap: 0; min-height: 24px; }
-.pill {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  min-width: 0;
-  padding: 2px 6px;
-  border-radius: 6px;
+.options-toggle { width: 26px; height: 26px; }
+.options-toggle:hover, body:has(.options:popover-open) .options-toggle { background: var(--surface); color: var(--fg); }
+
+/* The current model and effort, shown above the composer at once while
+   the options button is hovered (a native title tooltip waits). */
+.options-tip {
+  position: absolute;
+  right: 10px;
+  bottom: calc(100% + 6px);
+  padding: 4px 9px;
+  border-radius: 7px;
+  background: var(--raised);
+  box-shadow: var(--shadow);
   font-size: 12px;
   color: var(--muted);
+  white-space: nowrap;
+  pointer-events: none;
+  visibility: hidden;
 }
-.pill span { max-width: 130px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.pill:hover, .pill[aria-expanded="true"] { background: var(--surface); color: var(--fg); }
+.composer:has(.options-toggle:hover) .options-tip { visibility: visible; }
+body:has(.options:popover-open) .options-tip { visibility: hidden; }
 
-/* Menu that opens above a composer pill */
+/* Model and effort panel, opened from the composer's options button */
 
-.menu {
+.options {
   position: fixed;
-  inset: auto auto 0 0;
-  width: max-content;
-  min-width: 160px;
-  max-width: calc(100vw - 20px);
-  max-height: min(360px, 60vh);
+  inset: auto 10px 0 auto;
+  width: min(300px, calc(100vw - 20px));
   margin: 0;
   padding: 4px;
-  overflow-y: auto;
   border: 0;
-  border-radius: 10px;
+  border-radius: 12px;
   background: var(--raised);
   color: var(--fg);
   box-shadow: var(--shadow);
-  scrollbar-width: thin;
 }
-.menu h2 { margin: 6px 8px 2px; font-size: 11px; font-weight: 500; color: var(--faint); }
-.menu h2:first-child { margin-top: 2px; }
-.menu button {
+.options h2 { margin: 6px 8px 2px; font-size: 11px; font-weight: 500; color: var(--faint); }
+.models { max-height: min(260px, 45vh); overflow-y: auto; scrollbar-width: thin; }
+.models button {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -415,9 +421,15 @@ a.tab-chip:hover { background: color-mix(in srgb, var(--fg) 13%, transparent); }
   text-align: left;
   font-size: 13px;
 }
-.menu button:hover { background: var(--surface); }
-.menu button::after { content: ""; width: 14px; margin-left: auto; flex: none; }
-.menu button[aria-checked="true"]::after { content: "✓"; color: var(--muted); font-size: 12px; text-align: right; }
+.models button:hover { background: var(--surface); }
+.models button::after { content: ""; width: 14px; margin-left: auto; flex: none; }
+.models button[aria-checked="true"]::after { content: "✓"; color: var(--muted); font-size: 12px; text-align: right; }
+.options-sep { margin: 4px 8px; border-top: 1px solid var(--line); }
+/* Segmented control, lowest effort on the left. */
+.effort { display: flex; gap: 2px; margin: 4px; padding: 2px; border-radius: 8px; background: var(--surface); }
+.effort button { flex: 1; min-width: 0; padding: 3px 0; border-radius: 6px; font-size: 12px; color: var(--muted); }
+.effort button:hover { color: var(--fg); }
+.effort button[aria-checked="true"] { background: var(--raised); color: var(--fg); font-weight: 550; box-shadow: 0 1px 2px rgb(0 0 0 / 0.12); }
 
 @keyframes pulse { 50% { opacity: 0.35; } }
 @keyframes spin { to { transform: rotate(360deg); } }
