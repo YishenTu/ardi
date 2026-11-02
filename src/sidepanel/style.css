@@ -214,11 +214,11 @@ a.tab-chip:hover { background: color-mix(in srgb, var(--fg) 13%, transparent); }
 
 /* "Worked for 1m 5s": the finished run's steps, folded above the answer. */
 .work { font-size: 12.5px; color: var(--faint); }
-.work summary { display: flex; align-items: center; gap: 4px; width: fit-content; list-style: none; cursor: pointer; }
-.work summary::-webkit-details-marker { display: none; }
-.work summary::after { content: "›"; font-size: 14px; line-height: 1; transition: transform 0.15s; }
-.work[open] summary::after { transform: rotate(90deg); }
-.work summary:hover { color: var(--fg); }
+.work > summary { display: flex; align-items: center; gap: 4px; width: fit-content; list-style: none; cursor: pointer; }
+.work > summary::-webkit-details-marker { display: none; }
+.work > summary::after { content: "›"; font-size: 14px; line-height: 1; transition: transform 0.15s; }
+.work[open] > summary::after { transform: rotate(90deg); }
+.work > summary:hover { color: var(--fg); }
 .work-body { display: flex; flex-direction: column; gap: 8px; margin: 8px 0 2px 3px; padding-left: 13px; border-left: 1px solid var(--line); font-size: 13.5px; color: var(--fg); }
 
 /* Markdown */
