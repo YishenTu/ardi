@@ -233,7 +233,7 @@ const settings = new SettingsView($("settings"));
 $("ardi-version").textContent = chrome.runtime.getManifest().version;
 $("settings-open").addEventListener("click", () => void settings.open());
 
-const picker = new ModelPicker($("model"), $("thinking"), $("menu"), {
+const picker = new ModelPicker($("options-toggle"), $("options"), $("options-tip"), {
   setModel: (provider, modelId) => pi.send({ kind: "set_model", provider, modelId }),
   setThinkingLevel: (level) => pi.send({ kind: "set_thinking_level", level }),
 });
