@@ -20,7 +20,8 @@ async function request<T>(body: BrowserRequest, signal?: AbortSignal): Promise<T
   });
   if (!response.ok) throw new Error(`Browser bridge returned HTTP ${response.status}`);
   const reply = await response.json() as { result?: T; error?: string };
-  // Builds before userscripts answered this to any operation they lacked.
+  // The service worker answers this to an operation it lacks: the extension
+  // wasn't reloaded after Pi's tools were updated.
   if (reply.error === "Unknown browser operation") throw new Error(STALE_EXTENSION);
   if (reply.error) throw new Error(reply.error);
   return reply.result as T;
@@ -128,14 +129,14 @@ export default function registerChromeTools(pi: ExtensionAPI) {
       }
       if (!params.file) throw new Error(`${params.action} needs the script's file`);
       const file = resolve(params.file);
-      const { script, pages, warnings } = parseUserscript(await readFile(file, "utf8"), file);
+      const { script, warnings } = parseUserscript(await readFile(file, "utf8"), file);
       const notes = warnings.map(w => `\nWarning: ${w}`).join("");
       if (params.action === "install") {
         const result = await request<{ updated: boolean }>({ op: "scripts_install", script }, signal);
         return text(`${result.updated ? "Updated" : "Installed"} ${script.id}; Chrome runs it on matching pages from their next load.${notes}`, { ...result, id: script.id });
       }
       if (!params.url) throw new Error("test needs a url the script runs on");
-      if (!runsOn(pages, params.url)) throw new Error(`${script.id} doesn't run on ${params.url}: test it on a page its @match or @include covers`);
+      if (!runsOn(script, params.url)) throw new Error(`${script.id} doesn't run on ${params.url}: test it on a page its @match covers`);
       const run = await request<UserscriptRun>({ op: "scripts_test", url: params.url, code: script.code, waitMs: (params.wait ?? 2) * 1000 }, signal);
       const section = (title: string, lines: string[]) => `${title}:${lines.length ? lines.map(l => `\n  ${l}`).join("") : " none"}`;
       return text(truncate(`Ran ${script.id} on ${run.tab.url} (after the page loaded).\n${section("Logged", run.logs)}\n${section("Threw", run.errors)}${notes}`), { id: script.id, ...run });

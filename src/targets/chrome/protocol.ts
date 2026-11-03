@@ -29,4 +29,6 @@ export type BrowserRequest =
   | { op: "scripts_uninstall"; id: string }
   | { op: "scripts_test"; url: string; code: string; waitMs: number };
 
-export const BROWSER_OPS: readonly BrowserRequest["op"][] = ["list", "open", "close", "eval", "cdp", "scripts_list", "scripts_install", "scripts_uninstall", "scripts_test"];
+// Every operation, checked against BrowserRequest so neither can grow alone.
+const OPS: Record<BrowserRequest["op"], true> = { list: true, open: true, close: true, eval: true, cdp: true, scripts_list: true, scripts_install: true, scripts_uninstall: true, scripts_test: true };
+export const BROWSER_OPS = Object.keys(OPS) as BrowserRequest["op"][];

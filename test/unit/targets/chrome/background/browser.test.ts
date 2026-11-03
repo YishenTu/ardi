@@ -111,11 +111,6 @@ test("disconnect during tab lookup prevents a queued close from mutating the bro
   } finally { chrome.tabs.get = originalGet; }
 });
 
-test("an operation this extension doesn't know asks the user to reload it, not to work around it", async () => {
-  const browser = setup();
-  await expect(browser.execute({ op: "added_later" } as never)).rejects.toThrow("reload Ardi");
-});
-
 test("Stop closes a userscript test tab whether the page is loading or the script is running", async () => {
   const browser = setup();
   const originalCreate = chrome.tabs.create;

@@ -49,7 +49,8 @@ export class ChromeBrowserController {
         return tabs.filter(t => t.id !== undefined && webPage(t.url ?? "")).map(t => this.info(t, current?.id));
       }
       case "open": {
-        const tab = await this.open(request.url, request.background !== false, signal);
+        if (!webPage(request.url)) throw new Error("Only web page URLs are supported");
+        const tab = await this.waitForLoad(await chrome.tabs.create({ url: request.url, active: request.background === false }), 20_000, signal);
         return this.info(tab, (await this.current())?.id);
       }
       case "scripts_list": {
@@ -98,9 +99,7 @@ export class ChromeBrowserController {
         if (evaluated.exceptionDetails) throw new Error(evaluated.exceptionDetails.exception?.description ?? evaluated.exceptionDetails.text ?? "JavaScript failed");
         return { tab: info, value: evaluated.result?.value ?? null };
       }
-      // Pi's tools are newer than this service worker: the extension wasn't
-      // reloaded after an update.
-      default: throw new Error(`Ardi's extension is older than its agent and can't do "${(request as { op: string }).op}" yet. Ask the user to reload Ardi in chrome://extensions, then try again; don't look for another way.`);
+      default: throw new Error("Unknown browser operation");
     }
   }
 
@@ -118,13 +117,9 @@ export class ChromeBrowserController {
     signal?.throwIfAborted();
     if (this.closed) throw new Error("Browser connection disconnected");
   }
-  // Opens a tab and waits up to `loadMs` for it to load. `onCreated` hears
-  // of the tab first, so a caller can own it even if loading fails.
-  private async open(url: string, background: boolean, signal: AbortSignal, loadMs = 20_000, onCreated?: (id: number) => void): Promise<chrome.tabs.Tab> {
-    if (!webPage(url)) throw new Error("Only web page URLs are supported");
-    let tab = await chrome.tabs.create({ url, active: !background });
-    onCreated?.(tab.id!);
-    const deadline = Date.now() + loadMs;
+  // Waits up to `ms` for a tab to finish loading.
+  private async waitForLoad(tab: chrome.tabs.Tab, ms: number, signal: AbortSignal): Promise<chrome.tabs.Tab> {
+    const deadline = Date.now() + ms;
     while (tab.status !== "complete") {
       this.checkOpen(signal);
       if (Date.now() >= deadline) throw new Error(`Tab ${tab.id} is still loading; call read_tab with its id when ready`);
@@ -151,17 +146,19 @@ export class ChromeBrowserController {
         (type === "error" || type === "assert" ? errors : logs).push(type === "log" ? line : `${type}: ${line}`);
       } else if (method === "Runtime.exceptionThrown") errors.push(describe((params as { exceptionDetails: Exception }).exceptionDetails));
     };
+    if (!webPage(url)) throw new Error("Only web page URLs are supported");
     chrome.debugger.onEvent.addListener(onEvent);
     try {
-      await this.open(url, true, signal, 10_000, id => { tabId = id; });
-      const id = tabId!;
+      const tab = await chrome.tabs.create({ url, active: false });
+      const id = tabId = tab.id!;
+      await this.waitForLoad(tab, 10_000, signal);
       await this.attach(id, signal);
       // Runtime.enable replays the page's earlier console messages; skip those.
       await abortable(chrome.debugger.sendCommand({ tabId: id }, "Runtime.enable"), signal);
       listening = true;
       // CDP's own timeout stops at the first await, so bound the whole run.
       const evaluated = chrome.debugger.sendCommand({ tabId: id }, "Runtime.evaluate", { expression: code, awaitPromise: true, timeout: EVAL_MS }) as Promise<{ exceptionDetails?: Exception }>;
-      const result = await abortable(Promise.race([evaluated, sleep(EVAL_MS, signal).then(() => null)]), signal);
+      const result = await Promise.race([evaluated, sleep(EVAL_MS, signal).then(() => null)]);
       if (result === null) errors.push(`The script was still running after ${EVAL_MS / 1000} s; its promise never settled.`);
       else if (result.exceptionDetails) errors.push(describe(result.exceptionDetails));
       await sleep(Math.min(waitMs, 10_000), signal);

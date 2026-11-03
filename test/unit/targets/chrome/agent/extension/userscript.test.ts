@@ -40,12 +40,12 @@ test("@include is refused with a pointer to @match, so a script never runs more 
 });
 
 test("@match ignores the URL's fragment, as Chrome does", () => {
-  const { pages } = parseUserscript(header("@name Page", "@match https://a.test/page") + "1;", "page.user.js");
-  expect(runsOn(pages, "https://a.test/page#section")).toBe(true);
+  const { script } = parseUserscript(header("@name Page", "@match https://a.test/page") + "1;", "page.user.js");
+  expect(runsOn(script, "https://a.test/page#section")).toBe(true);
 });
 
 test("globs follow Chrome: ? is zero or one character and a backslash escapes a wildcard", () => {
-  const glob = (pattern: string, url: string) => runsOn(parseUserscript(header("@name G", "@match https://g.test/*", `@exclude ${pattern}`) + "1;", "g.user.js").pages, url);
+  const glob = (pattern: string, url: string) => runsOn(parseUserscript(header("@name G", "@match https://g.test/*", `@exclude ${pattern}`) + "1;", "g.user.js").script, url);
   expect(glob("https://g.test/a?b", "https://g.test/ab")).toBe(false);
   expect(glob("https://g.test/a?b", "https://g.test/axb")).toBe(false);
   expect(glob("https://g.test/a?b", "https://g.test/axxb")).toBe(true);

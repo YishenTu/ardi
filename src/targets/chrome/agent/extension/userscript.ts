@@ -9,11 +9,7 @@ import type { Userscript } from "../../protocol";
 const RUN_AT = { "document-start": "document_start", "document-end": "document_end", "document-idle": "document_idle" } as const;
 const IGNORED = new Set(["@grant", "@require", "@resource"]);
 
-// Which pages a script runs on: an @match covers it, and no @exclude-match
-// or @exclude does.
-export type Pages = { matches: string[]; excludeMatches: string[]; excludes: string[] };
-
-export function parseUserscript(source: string, file: string): { script: Userscript; pages: Pages; warnings: string[] } {
+export function parseUserscript(source: string, file: string): { script: Userscript; warnings: string[] } {
   const block = /^\/\/\s*==UserScript==\s*$([\s\S]*?)^\/\/\s*==\/UserScript==\s*$/m.exec(source);
   if (!block) throw new Error(`${file} has no // ==UserScript== header`);
   const keys = new Map<string, string[]>();
@@ -37,29 +33,30 @@ export function parseUserscript(source: string, file: string): { script: Userscr
   const runAt = RUN_AT[(one("@run-at") ?? "document-end") as keyof typeof RUN_AT];
   if (!runAt) throw new Error(`${file}: @run-at must be document-start, document-end or document-idle`);
 
-  const pages: Pages = { matches: all("@match"), excludeMatches: all("@exclude-match"), excludes: all("@exclude") };
   // Every filter is sent, empty or not: reinstalling replaces them all.
   const script: Userscript = {
     id: name,
-    matches: pages.matches,
-    excludeMatches: pages.excludeMatches,
-    excludeGlobs: pages.excludes,
+    matches: all("@match"),
+    excludeMatches: all("@exclude-match"),
+    excludeGlobs: all("@exclude"),
     runAt,
     world: one("@inject-into") === "content" ? "USER_SCRIPT" : "MAIN",
     allFrames: !keys.has("@noframes"),
     code,
   };
   const warnings = [...keys.keys()].filter(key => IGNORED.has(key)).map(key => `${key} is ignored: there are no GM_* APIs, @require or @resource in Chrome either`);
-  return { script, pages, warnings };
+  return { script, warnings };
 }
 
-export function runsOn(pages: Pages, url: string): boolean {
+// Whether Chrome would run the script on `url`: an @match covers it and no
+// @exclude-match or @exclude does.
+export function runsOn(script: Userscript, url: string): boolean {
   // Match patterns ignore the fragment; globs see the whole URL.
   const page = url.replace(/#.*$/, "");
-  const any = (patterns: string[], toRegExp: (p: string) => RegExp, target: string) => patterns.some(p => toRegExp(p).test(target));
-  return any(pages.matches, matchPattern, page)
-    && !any(pages.excludeMatches, matchPattern, page)
-    && !any(pages.excludes, glob, url);
+  const any = (patterns: string[] | undefined, toRegExp: (p: string) => RegExp, target: string) => (patterns ?? []).some(p => toRegExp(p).test(target));
+  return any(script.matches, matchPattern, page)
+    && !any(script.excludeMatches, matchPattern, page)
+    && !any(script.excludeGlobs, glob, url);
 }
 
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
