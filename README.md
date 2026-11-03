@@ -16,9 +16,7 @@
 - **Works across your tabs.** It can list, read and open tabs, look at the images on them, and run anything else through `ardia exec`.
 - **Runs Ardia itself.** Ask it to split a pane, merge windows or switch to dark mode; to change a setting, shortcut or theme for good; to find something in your recent history; to write a userscript that changes a site for good; or to set up a hook that runs whenever a site opens. Ardia only.
 - **Mention tabs with @.** Type `@` to pick an open tab; it goes into your message as a chip, and Pi reads it.
-- **Keeps working when the panel is closed.** Pi lives in the background, not in the panel.
-- **Every chat is a Pi session.** Switch chats and pick up exactly where you left off.
-- **Isolated.** It runs with its own prompt, tools and skills, separate from your own Pi setup.
+- **Slash commands.** Type `/` to start a new chat (`/new`), free up context (`/compact`), or run one of your skills from `~/.ardi/.agents/skills/`.
 
 ## How it works
 
