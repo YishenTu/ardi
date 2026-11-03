@@ -75,4 +75,5 @@ Close your tab when you're done: `await t.close()`.
 - Type with `type_text` (real key events) when a page listens for keys; `insert_text` is faster for plain fields. End typed text with `"\r"` to press Enter in a field; `keyboard.press(Key.ENTER)` sends no character.
 - Background tabs are hidden, so pages there may throttle timers and animations. Screenshots still work.
 - Only web pages are reachable (http, https, `about:blank`, `data:`, `blob:`): not `file://`, `chrome://`, extension pages or Ardia's own views. Calls that read cookies, storage or saved data, change settings or permissions, intercept requests or touch local files fail with `ardia: <Method> isn't allowed for the ardia command`.
+- Network events come without cookie and authorization headers.
 - `browser.stop()` is refused; `ardia_exec` never quits Ardia.

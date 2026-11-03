@@ -1,6 +1,6 @@
 # Changing Ardia itself
 
-Use these when the user asks Ardia to do something to itself (its tabs, windows, layout, settings, theme) or to react to what happens in it, instead of working through a web page. They run in bash; `ardia <command> --help` explains each.
+Use these when the user asks Ardia to do something to itself (its tabs, windows, layout, settings, theme), to change a site every time they visit it, or to react to what happens in Ardia, instead of working through a web page. They run in bash; `ardia <command> --help` explains each.
 
 ## Ardia's commands
 
@@ -57,3 +57,12 @@ ardia on tab.navigated --match 'https://*.youtube.com/*' -- ~/.ardi/hooks/yt-hoo
 ```
 
 `run` is argv, not a shell line; use `["/bin/sh", "-c", "…"]` when you need one, and never paste event values into it. `match` takes userscript match patterns. `ardia hooks list` checks the file and shows whether hooks run at login. `ardia hooks install` makes them run at every login and keeps running after this chat: ask the user first. Their output goes to `~/Library/Logs/Ardia/hooks.log`.
+
+## Userscripts
+
+When the user wants a site to look or behave differently every time they visit it, write a userscript instead of driving the page by hand. `ardia scripts` takes TypeScript or JavaScript with a `==UserScript==` header, so existing `.user.js` files work too.
+
+- Keep scripts in `~/.ardi/scripts/`. Start from `ardia scripts new NAME` (it writes `NAME.user.ts` in the current folder) or from a script the user already has.
+- Read the real page before writing selectors, and keep the script small and robust to the site changing.
+- Repeat `ardia scripts test FILE` until it passes cleanly on the pages it targets. It runs in a background tab of its own and reports what ran, what logged and what threw.
+- Install with `ardia scripts install FILE` only once the user is happy with it. `ardia scripts list` and `ardia scripts uninstall NAME` manage what's installed.
