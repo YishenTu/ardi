@@ -1,6 +1,6 @@
 import type { BrowserReply } from "../../../bridge/protocol";
 import type { BrowserLink } from "../../../background/target";
-import type { BrowserRequest, BrowserTab, TabSelector } from "../protocol";
+import type { BrowserRequest, BrowserTab, InstalledUserscript, TabSelector, UserscriptRun } from "../protocol";
 
 // One controller per native connection. All targets belong to this extension's
 // browser; no browser port, process discovery or external profile is involved.
@@ -50,16 +50,30 @@ export class ChromeBrowserController {
       }
       case "open": {
         if (!webPage(request.url)) throw new Error("Only web page URLs are supported");
-        let tab = await chrome.tabs.create({ url: request.url, active: request.background === false });
-        const deadline = Date.now() + 20_000;
-        while (tab.status !== "complete") {
-          this.checkOpen(signal);
-          if (Date.now() >= deadline) throw new Error(`Tab ${tab.id} is still loading; call read_tab with its id when ready`);
-          await new Promise(resolve => setTimeout(resolve, 100));
-          tab = await chrome.tabs.get(tab.id!);
-        }
+        const tab = await this.waitForLoad(await chrome.tabs.create({ url: request.url, active: request.background === false }), 20_000, signal);
         return this.info(tab, (await this.current())?.id);
       }
+      case "scripts_list": {
+        const scripts = await userScripts().getScripts();
+        return scripts.map(({ js: _js, ...script }) => script as InstalledUserscript);
+      }
+      case "scripts_install": {
+        const api = userScripts();
+        const { code, ...script } = request.script;
+        const registration = { ...script, js: [{ code }] };
+        const installed = await api.getScripts({ ids: [script.id] });
+        this.checkOpen(signal);
+        await (installed.length ? api.update([registration]) : api.register([registration]));
+        return { installed: script.id, updated: installed.length > 0 };
+      }
+      case "scripts_uninstall": {
+        const api = userScripts();
+        if (!(await api.getScripts({ ids: [request.id] })).length) throw new Error(`No installed userscript named ${request.id}; list them for their names`);
+        this.checkOpen(signal);
+        await api.unregister({ ids: [request.id] });
+        return { uninstalled: request.id };
+      }
+      case "scripts_test": return await this.testScript(request.url, request.code, request.waitMs, signal);
       case "close": {
         const tab = await this.select({ id: request.id });
         this.checkOpen(signal);
@@ -103,6 +117,61 @@ export class ChromeBrowserController {
     signal?.throwIfAborted();
     if (this.closed) throw new Error("Browser connection disconnected");
   }
+  // Waits up to `ms` for a tab to finish loading.
+  private async waitForLoad(tab: chrome.tabs.Tab, ms: number, signal: AbortSignal): Promise<chrome.tabs.Tab> {
+    const deadline = Date.now() + ms;
+    while (tab.status !== "complete") {
+      this.checkOpen(signal);
+      if (Date.now() >= deadline) throw new Error(`Tab ${tab.id} is still loading; call read_tab with its id when ready`);
+      await new Promise(resolve => setTimeout(resolve, 100));
+      tab = await chrome.tabs.get(tab.id!);
+    }
+    return tab;
+  }
+
+  // Runs a script once in a background tab of its own, after the page has
+  // loaded, and reports what it logged and threw while it ran and for
+  // `waitMs` after. Loading (10 s), running (EVAL_MS) and watching (10 s)
+  // fit in the relay's 30 s, and Stop closes the tab at any point.
+  private async testScript(url: string, code: string, waitMs: number, signal: AbortSignal): Promise<UserscriptRun> {
+    let tabId: number | undefined;
+    const logs: string[] = [];
+    const errors: string[] = [];
+    let listening = false;
+    const onEvent = (source: chrome.debugger.Debuggee, method: string, params?: object) => {
+      if (!listening || source.tabId !== tabId) return;
+      if (method === "Runtime.consoleAPICalled") {
+        const { type, args } = params as { type: string; args: { value?: unknown; description?: string }[] };
+        const line = args.map(a => a.description ?? (typeof a.value === "string" ? a.value : JSON.stringify(a.value))).join(" ");
+        (type === "error" || type === "assert" ? errors : logs).push(type === "log" ? line : `${type}: ${line}`);
+      } else if (method === "Runtime.exceptionThrown") errors.push(describe((params as { exceptionDetails: Exception }).exceptionDetails));
+    };
+    if (!webPage(url)) throw new Error("Only web page URLs are supported");
+    chrome.debugger.onEvent.addListener(onEvent);
+    try {
+      const tab = await chrome.tabs.create({ url, active: false });
+      const id = tabId = tab.id!;
+      await this.waitForLoad(tab, 10_000, signal);
+      await this.attach(id, signal);
+      // Runtime.enable replays the page's earlier console messages; skip those.
+      await abortable(chrome.debugger.sendCommand({ tabId: id }, "Runtime.enable"), signal);
+      listening = true;
+      // CDP's own timeout stops at the first await, so bound the whole run.
+      const evaluated = chrome.debugger.sendCommand({ tabId: id }, "Runtime.evaluate", { expression: code, awaitPromise: true, timeout: EVAL_MS }) as Promise<{ exceptionDetails?: Exception }>;
+      const result = await Promise.race([evaluated, sleep(EVAL_MS, signal).then(() => null)]);
+      if (result === null) errors.push(`The script was still running after ${EVAL_MS / 1000} s; its promise never settled.`);
+      else if (result.exceptionDetails) errors.push(describe(result.exceptionDetails));
+      await sleep(Math.min(waitMs, 10_000), signal);
+      return { tab: this.info(await chrome.tabs.get(id), (await this.current())?.id), logs, errors };
+    } finally {
+      chrome.debugger.onEvent.removeListener(onEvent);
+      if (tabId !== undefined) {
+        this.attaching.delete(tabId);
+        await chrome.tabs.remove(tabId).catch(() => {});
+      }
+    }
+  }
+
   private async current() { return (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0]; }
   private info(tab: chrome.tabs.Tab, currentId?: number): BrowserTab {
     return { id: String(tab.id), title: tab.title ?? "", url: tab.url ?? "", current: tab.id === currentId };
@@ -123,6 +192,40 @@ export class ChromeBrowserController {
     }
     await pending;
   }
+}
+
+const EVAL_MS = 3_000;
+
+// Waits `ms`, or rejects as soon as `signal` aborts (and drops the timer).
+function sleep(ms: number, signal: AbortSignal): Promise<void> {
+  signal.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { signal.removeEventListener("abort", abort); resolve(); }, ms);
+    const abort = () => { clearTimeout(timer); reject(signal.reason); };
+    signal.addEventListener("abort", abort, { once: true });
+  });
+}
+
+// Settles with `promise`, or rejects as soon as `signal` aborts.
+function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  signal.throwIfAborted();
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    signal.addEventListener("abort", abort, { once: true });
+    promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+  });
+}
+
+type Exception = { text?: string; exception?: { description?: string } };
+const describe = (e: Exception) => e.exception?.description ?? e.text ?? "Script failed";
+
+// chrome.userScripts, which Chrome hides until the user allows user scripts
+// for this extension.
+function userScripts(): typeof chrome.userScripts {
+  try {
+    if (typeof chrome.userScripts?.getScripts === "function") return chrome.userScripts;
+  } catch { /* Chrome throws while the toggle is off. */ }
+  throw new Error(`Chrome isn't letting Ardi run userscripts. Ask the user to open chrome://extensions/?id=${chrome.runtime.id} and turn on "Allow User Scripts" (on Chrome before 138, turn on Developer mode instead), then try again.`);
 }
 
 // Serves the bridge's relay requests for one native connection with a fresh

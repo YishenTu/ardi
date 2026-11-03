@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from "node:net";
 import type { BrowserRelay } from "../../../bridge/host";
 import type { BridgeEvent, BrowserReply } from "../../../bridge/protocol";
-import type { BrowserRequest } from "../protocol";
+import { BROWSER_OPS, type BrowserRequest } from "../protocol";
 
 const MAX_BODY_BYTES = 1024 * 1024;
 
@@ -42,7 +42,7 @@ export class ChromeBrowserRelay implements BrowserRelay {
     let body: BrowserRequest;
     try {
       body = JSON.parse(await readBody(request)) as BrowserRequest;
-      if (!body || !["list", "open", "close", "eval", "cdp"].includes(body.op)) throw new Error("Unknown operation");
+      if (!body || !BROWSER_OPS.includes(body.op)) throw new Error("Unknown operation");
     } catch { return respond(400, { error: "Invalid browser request" }); }
     if (response.destroyed) return;
     const id = randomUUID();

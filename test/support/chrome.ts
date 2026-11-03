@@ -77,6 +77,11 @@ const fake = {
   debuggerCommands: [] as { target: chrome.debugger.Debuggee; method: string; params?: object }[],
   debuggerDetach: new Event(),
   onDebuggerCommand: undefined as ((method: string, params?: object) => unknown) | undefined,
+  // chrome.debugger.onEvent; emit (source, method, params) as Chrome would.
+  debuggerEvent: new Event(),
+  // Registered user scripts by id, and Chrome's "Allow User Scripts" toggle.
+  userScripts: new Map<string, any>(),
+  userScriptsAllowed: true,
 };
 
 export function resetChrome() {
@@ -93,7 +98,30 @@ export function resetChrome() {
   fake.debuggerCommands = [];
   fake.debuggerDetach.clear();
   fake.onDebuggerCommand = undefined;
+  fake.debuggerEvent.clear();
+  fake.userScripts.clear();
+  fake.userScriptsAllowed = true;
 }
+
+// chrome.userScripts, which Chrome leaves undefined while the toggle is off.
+const userScripts = {
+  async register(scripts: any[]) {
+    for (const s of scripts) if (fake.userScripts.has(s.id)) throw new Error(`Duplicate script ID '${s.id}'`);
+    for (const s of scripts) fake.userScripts.set(s.id, structuredClone(s));
+  },
+  async update(scripts: any[]) {
+    for (const s of scripts) {
+      if (!fake.userScripts.has(s.id)) throw new Error(`No script with ID '${s.id}'`);
+      fake.userScripts.set(s.id, { ...fake.userScripts.get(s.id), ...structuredClone(s) });
+    }
+  },
+  async getScripts(filter?: { ids?: string[] }) {
+    return structuredClone([...fake.userScripts.values()].filter(s => !filter?.ids || filter.ids.includes(s.id)));
+  },
+  async unregister(filter?: { ids?: string[] }) {
+    for (const id of filter?.ids ?? [...fake.userScripts.keys()]) fake.userScripts.delete(id);
+  },
+};
 
 export const chromeFake = fake;
 
@@ -122,9 +150,14 @@ export const chromeFake = fake;
       return fake.onSendMessage?.(message);
     },
     getURL: (path: string) => `chrome-extension://ardi${path}`,
+    id: "ardi",
+  },
+  get userScripts() {
+    return fake.userScriptsAllowed ? userScripts : undefined;
   },
   debugger: {
     onDetach: fake.debuggerDetach,
+    onEvent: fake.debuggerEvent,
     async attach(target: chrome.debugger.Debuggee) { fake.debuggerAttached.push(target.tabId!); },
     async detach(target: chrome.debugger.Debuggee) { fake.debuggerDetached.push(target.tabId!); },
     async sendCommand(target: chrome.debugger.Debuggee, method: string, params?: object) {

@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { ChromeBrowserController } from "../../../../../src/targets/chrome/background/browser";
 import { chromeFake } from "../../../../support/chrome";
+import { waitFor } from "../../../../support/wait";
 
 let controller: ChromeBrowserController | undefined;
 afterEach(async () => { await controller?.dispose(); controller = undefined; });
@@ -108,4 +109,36 @@ test("disconnect during tab lookup prevents a queued close from mutating the bro
     await expect(closing).rejects.toThrow("disconnected");
     expect(chromeFake.tabs).toHaveLength(3);
   } finally { chrome.tabs.get = originalGet; }
+});
+
+test("Stop closes a userscript test tab whether the page is loading or the script is running", async () => {
+  const browser = setup();
+  const originalCreate = chrome.tabs.create;
+  // A page that never finishes loading.
+  chrome.tabs.create = async (props) => { const tab = await originalCreate(props); chromeFake.tabs.find(t => t.id === tab.id)!.status = "loading"; return { ...tab, status: "loading" as const }; };
+  try {
+    const loading = new AbortController();
+    const run = browser.execute({ op: "scripts_test", url: "https://slow.test/", code: "1", waitMs: 0 }, loading.signal);
+    await waitFor(() => expect(chromeFake.createdTabs).toHaveLength(1));
+    loading.abort();
+    await expect(run).rejects.toThrow();
+    expect(chromeFake.tabs.map(t => t.id)).toEqual([10, 20, 30]);
+  } finally { chrome.tabs.create = originalCreate; }
+
+  const watching = new AbortController();
+  const run = browser.execute({ op: "scripts_test", url: "https://fast.test/", code: "1", waitMs: 10_000 }, watching.signal);
+  await waitFor(() => expect(chromeFake.debuggerCommands.map(c => c.method)).toContain("Runtime.evaluate"));
+  watching.abort();
+  await expect(run).rejects.toThrow();
+  expect(chromeFake.tabs.map(t => t.id)).toEqual([10, 20, 30]);
+});
+
+test("a script whose promise never settles is reported as still running, within the test's budget", async () => {
+  const browser = setup();
+  chromeFake.onDebuggerCommand = (method) => method === "Runtime.evaluate" ? new Promise(() => {}) : {};
+  const started = Date.now();
+  const run = await browser.execute({ op: "scripts_test", url: "https://fast.test/", code: "new Promise(() => {})", waitMs: 0 }) as { errors: string[] };
+  expect(run.errors.join("\n")).toContain("still running");
+  expect(Date.now() - started).toBeLessThan(4_900);
+  expect(chromeFake.tabs.map(t => t.id)).toEqual([10, 20, 30]);
 });
