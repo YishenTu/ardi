@@ -65,4 +65,4 @@ When the user wants a site to look or behave differently every time they visit i
 - Keep scripts in `~/.ardi/scripts/`. Start from `ardia scripts new NAME` (it writes `NAME.user.ts` in the current folder) or from a script the user already has.
 - Read the real page before writing selectors, and keep the script small and robust to the site changing.
 - Repeat `ardia scripts test FILE` until it passes cleanly on the pages it targets. It runs in a background tab of its own and reports what ran, what logged and what threw.
-- Install with `ardia scripts install FILE` only once the user is happy with it. `ardia scripts list` and `ardia scripts uninstall NAME` manage what's installed.
+- Install with `ardia scripts install FILE` only once the user is happy with it. Install copies the built script into Ardia, so after editing the file, install it again. `ardia scripts list` and `ardia scripts uninstall NAME` manage what's installed.
