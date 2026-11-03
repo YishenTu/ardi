@@ -13,8 +13,9 @@
 ## Features
 
 - **Now supports Chrome.** The same Ardi panel, in the Chrome you already use. Works with your existing tabs and signed-in accounts. [Get started →](#chrome-support)
-- **Works across your tabs.** It can list, read and open tabs, look at the images on them, and run anything else through `ardia exec`.
-- **Runs Ardia itself.** Ask it to split a pane, merge windows or switch to dark mode; to change a setting, shortcut or theme for good; to find something in your recent history; to write a userscript that changes a site for good; or to set up a hook that runs whenever a site opens. Ardia only.
+- **Works across your tabs.** Ardi can list, read and open tabs, look at the images on them, and run anything else through `ardia exec`.
+- **Userscripts.** Ask Ardi to change how a site looks or behaves on every visit: it writes a userscript, tests it on the real page and installs it once you're happy.
+- **Runs Ardia itself.** Ask Ardi to split a pane, merge windows or switch to dark mode; to change a setting, shortcut or theme for good; to find something in your recent history; or to set up a hook that runs whenever a site opens. Ardia only.
 - **Mention tabs with @.** Type `@` to pick an open tab; it goes into your message as a chip, and Pi reads it.
 - **Slash commands.** Type `/` to start a new chat (`/new`), free up context (`/compact`), or run one of your skills from `~/.ardi/.agents/skills/`.
 
@@ -70,7 +71,7 @@ Download and extract `ardi-chrome-<version>.zip` from [Releases](https://github.
 
 Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select the folder printed by the installer. For a source build, run `bun run host:install chrome` and load `dist/chrome/` instead.
 
-Both versions share instructions and skills in `~/.ardi/`; chats and settings stay separate. Chrome's debugging banner can remain after a response until you cancel control or restart Ardi.
+For Ardi to install userscripts, open Ardi's **Details** in `chrome://extensions` and turn on **Allow User Scripts**.
 
 ## Contributing
 

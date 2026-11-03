@@ -109,3 +109,30 @@ test("disconnect during tab lookup prevents a queued close from mutating the bro
     expect(chromeFake.tabs).toHaveLength(3);
   } finally { chrome.tabs.get = originalGet; }
 });
+
+test("an operation this extension doesn't know asks the user to reload it, not to work around it", async () => {
+  const browser = setup();
+  await expect(browser.execute({ op: "added_later" } as never)).rejects.toThrow("reload Ardi");
+});
+
+test("Stop closes a userscript test tab whether the page is loading or the script is running", async () => {
+  const browser = setup();
+  const originalCreate = chrome.tabs.create;
+  // A page that never finishes loading.
+  chrome.tabs.create = async (props) => { const tab = await originalCreate(props); chromeFake.tabs.find(t => t.id === tab.id)!.status = "loading"; return { ...tab, status: "loading" as const }; };
+  try {
+    const loading = new AbortController();
+    const run = browser.execute({ op: "scripts_test", url: "https://slow.test/", code: "1", waitMs: 0 }, loading.signal);
+    await new Promise(resolve => setTimeout(resolve, 20));
+    loading.abort();
+    await expect(run).rejects.toThrow();
+    expect(chromeFake.tabs.map(t => t.id)).toEqual([10, 20, 30]);
+  } finally { chrome.tabs.create = originalCreate; }
+
+  const watching = new AbortController();
+  const run = browser.execute({ op: "scripts_test", url: "https://fast.test/", code: "1", waitMs: 60_000 }, watching.signal);
+  await new Promise(resolve => setTimeout(resolve, 20));
+  watching.abort();
+  await expect(run).rejects.toThrow();
+  expect(chromeFake.tabs.map(t => t.id)).toEqual([10, 20, 30]);
+});
