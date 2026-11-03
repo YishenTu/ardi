@@ -14,10 +14,9 @@
 
 - **Now supports Chrome.** The same Ardi panel, in the Chrome you already use. Works with your existing tabs and signed-in accounts. [Get started →](#chrome-support)
 - **Works across your tabs.** It can list, read and open tabs, look at the images on them, and run anything else through `ardia exec`.
+- **Runs Ardia itself.** Ask it to split a pane, merge windows or switch to dark mode; to change a setting, shortcut or theme for good; to find something in your recent history; to write a userscript that changes a site for good; or to set up a hook that runs whenever a site opens. Ardia only.
 - **Mention tabs with @.** Type `@` to pick an open tab; it goes into your message as a chip, and Pi reads it.
-- **Keeps working when the panel is closed.** Pi lives in the background, not in the panel.
-- **Every chat is a Pi session.** Switch chats and pick up exactly where you left off.
-- **Isolated.** It runs with its own prompt, tools and skills, separate from your own Pi setup.
+- **Slash commands.** Type `/` to start a new chat (`/new`), free up context (`/compact`), or run one of your skills from `~/.ardi/.agents/skills/`.
 
 ## How it works
 
@@ -71,7 +70,7 @@ Download and extract `ardi-chrome-<version>.zip` from [Releases](https://github.
 
 Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select the folder printed by the installer. For a source build, run `bun run host:install chrome` and load `dist/chrome/` instead.
 
-Both versions share instructions and skills in `~/.ardi/`; chats and settings stay separate. Chrome's debugging banner can remain after a response until you cancel control or restart Ardi. Persistent userscripts are Ardia-only.
+Both versions share instructions and skills in `~/.ardi/`; chats and settings stay separate. Chrome's debugging banner can remain after a response until you cancel control or restart Ardi.
 
 ## Contributing
 

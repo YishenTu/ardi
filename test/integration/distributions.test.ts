@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { expect, test } from "bun:test";
 import { existsSync, readFileSync, realpathSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, resolve, sep } from "node:path";
 
 import { FAKE_PI } from "../support/executables";
 import { cleanUp, installEnv, LAUNCHER, readHostManifest, startHost, unzipFile } from "../support/nativeHost";
@@ -85,8 +85,12 @@ test("both distributions build and install without overwriting each other", asyn
         expect(enabled).not.toContain(target === "chrome" ? "ardia_exec" : "browser_exec");
         // The path as pi loads the extension (Windows may spell `out` in 8.3 form).
         const reference = join(extension, "..", "references", target === "chrome" ? "chrome.md" : "ardia.md");
-        expect(registered.some(t => t.description.includes(reference))).toBe(true);
-        expect(existsSync(reference)).toBe(true);
+        // Every reference a tool description points pi at ships with the build.
+        const references = join(extension, "..", "references");
+        // Split on the directory itself: the path may contain spaces.
+        const named = registered.flatMap(t => t.description.split(references + sep).slice(1).map(rest => join(references, rest.match(/^[\w.-]+\.md/)?.[0] ?? rest)));
+        expect(named).toContain(reference);
+        for (const path of named) expect(existsSync(path)).toBe(true);
         expect(existsSync(join(home, ".ardi/references"))).toBe(false);
       } finally { child.stdin.end(); await exited; }
 
