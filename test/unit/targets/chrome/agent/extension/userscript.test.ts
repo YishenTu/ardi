@@ -1,11 +1,9 @@
 import { expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
-import { runInNewContext } from "node:vm";
 import { pathToFileURL } from "node:url";
 import { NODE } from "../../../../../support/executables";
 import { parseUserscript, runsOn } from "../../../../../../src/targets/chrome/agent/extension/userscript";
-import type { Userscript } from "../../../../../../src/targets/chrome/protocol";
 
 const header = (...lines: string[]) => ["// ==UserScript==", ...lines.map(l => `// ${l}`), "// ==/UserScript==", ""].join("\n");
 
@@ -31,28 +29,24 @@ test("Ardia's defaults and keys map to the same behaviour in Chrome", () => {
   expect(warnings.join("\n")).toContain("@grant");
 });
 
-// Runs a registered script's code on `url`. With @include, Chrome injects it on every http(s) page and the code decides.
-function runAt(script: Userscript, url: string): boolean {
-  expect(script.matches).toEqual(["http://*/*", "https://*/*"]);
-  const page = { location: { href: url }, ran: false };
-  runInNewContext(script.code.replace("RAN", "ran = true"), page);
-  return page.ran;
-}
-
-test("@include alone runs only on the pages its globs cover, though Chrome needs broad matches to inject", () => {
-  const { script, pages } = parseUserscript(header("@name News", "@include https://news.test/*") + "RAN;\n", "news.user.js");
-  expect(script.includeGlobs).toBeUndefined();
-  expect(runAt(script, "https://news.test/today")).toBe(true);
-  expect(runAt(script, "https://bank.test/")).toBe(false);
+test("an @include glob that is also a match pattern runs only on the pages it covers", () => {
+  const { script, pages } = parseUserscript(header("@name News", "@include https://news.test/*", "@include *://*.blog.test/*") + "1;\n", "news.user.js");
+  // Registered as Chrome match patterns: nothing broader, and the code is left as written.
+  expect(script.matches).toEqual(["https://news.test/*", "*://*.blog.test/*"]);
+  expect(script.code).toBe(header("@name News", "@include https://news.test/*", "@include *://*.blog.test/*") + "1;\n");
   expect(runsOn(pages, "https://news.test/today")).toBe(true);
+  expect(runsOn(pages, "https://www.blog.test/post")).toBe(true);
   expect(runsOn(pages, "https://bank.test/")).toBe(false);
 });
 
-test("@match and @include together run where either covers, like Violentmonkey and Chrome", () => {
-  const { script } = parseUserscript(header("@name Both", "@match https://a.test/*", "@include https://b.test/*") + "RAN;\n", "both.user.js");
-  expect(runAt(script, "https://a.test/x")).toBe(true);
-  expect(runAt(script, "https://b.test/x")).toBe(true);
-  expect(runAt(script, "https://c.test/x")).toBe(false);
+test("an @include glob Chrome can't limit a script to is refused, not widened", () => {
+  expect(() => parseUserscript(header("@name Loose", "@include http*://news.test/*") + "1;", "loose.user.js")).toThrow("@match");
+  expect(() => parseUserscript(header("@name Odd", "@include https://news.test/a?b") + "1;", "odd.user.js")).toThrow("@match");
+});
+
+test("@match ignores the URL's fragment, as Chrome does", () => {
+  const { pages } = parseUserscript(header("@name Page", "@match https://a.test/page") + "1;", "page.user.js");
+  expect(runsOn(pages, "https://a.test/page#section")).toBe(true);
 });
 
 test("globs follow Chrome: ? is zero or one character and a backslash escapes a wildcard", () => {
@@ -68,7 +62,7 @@ test("globs follow Chrome: ? is zero or one character and a backslash escapes a 
 test("a single-file TypeScript script loses its types and keeps its code", () => {
   const source = header("@name Typed", "@match https://a.test/*") + "const n: number = 1;\nconsole.log(n);\n";
   const module = pathToFileURL(resolve(import.meta.dirname, "../../../../../../src/targets/chrome/agent/extension/userscript.ts")).href;
-  const run = spawnSync(NODE, ["--input-type=module", "-e", `import { parseUserscript } from ${JSON.stringify(module)}; console.log(parseUserscript(${JSON.stringify(source)}, "typed.user.ts").script.code)`], { encoding: "utf8" });
+  const run = spawnSync(NODE, ["--input-type=module", "-e", `import { parseUserscript } from ${JSON.stringify(module)}; console.log(parseUserscript(${JSON.stringify(source)}, "typed.user.ts").script.code)`], { encoding: "utf8", timeout: 30_000 });
   expect(run.stderr.replace(/.*ExperimentalWarning.*\n?|.*--trace-warnings.*\n?/g, "")).toBe("");
   expect(run.stdout).not.toContain(": number");
   expect(run.stdout).toContain("console.log(n)");

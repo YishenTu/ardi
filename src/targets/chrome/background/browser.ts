@@ -136,8 +136,8 @@ export class ChromeBrowserController {
 
   // Runs a script once in a background tab of its own, after the page has
   // loaded, and reports what it logged and threw while it ran and for
-  // `waitMs` after. Loading, running and watching fit in the relay's 30 s,
-  // and Stop closes the tab at any point.
+  // `waitMs` after. Loading (10 s), running (EVAL_MS) and watching (10 s)
+  // fit in the relay's 30 s, and Stop closes the tab at any point.
   private async testScript(url: string, code: string, waitMs: number, signal: AbortSignal): Promise<UserscriptRun> {
     let tabId: number | undefined;
     const logs: string[] = [];
@@ -159,9 +159,12 @@ export class ChromeBrowserController {
       // Runtime.enable replays the page's earlier console messages; skip those.
       await abortable(chrome.debugger.sendCommand({ tabId: id }, "Runtime.enable"), signal);
       listening = true;
-      const result = await abortable(chrome.debugger.sendCommand({ tabId: id }, "Runtime.evaluate", { expression: code, awaitPromise: true, timeout: 5_000 }), signal) as { exceptionDetails?: Exception };
-      if (result.exceptionDetails) errors.push(describe(result.exceptionDetails));
-      await abortable(new Promise(resolve => setTimeout(resolve, Math.min(waitMs, 10_000))), signal);
+      // CDP's own timeout stops at the first await, so bound the whole run.
+      const evaluated = chrome.debugger.sendCommand({ tabId: id }, "Runtime.evaluate", { expression: code, awaitPromise: true, timeout: EVAL_MS }) as Promise<{ exceptionDetails?: Exception }>;
+      const result = await abortable(Promise.race([evaluated, sleep(EVAL_MS, signal).then(() => null)]), signal);
+      if (result === null) errors.push(`The script was still running after ${EVAL_MS / 1000} s; its promise never settled.`);
+      else if (result.exceptionDetails) errors.push(describe(result.exceptionDetails));
+      await sleep(Math.min(waitMs, 10_000), signal);
       return { tab: this.info(await chrome.tabs.get(id), (await this.current())?.id), logs, errors };
     } finally {
       chrome.debugger.onEvent.removeListener(onEvent);
@@ -192,6 +195,18 @@ export class ChromeBrowserController {
     }
     await pending;
   }
+}
+
+const EVAL_MS = 3_000;
+
+// Waits `ms`, or rejects as soon as `signal` aborts (and drops the timer).
+function sleep(ms: number, signal: AbortSignal): Promise<void> {
+  signal.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { signal.removeEventListener("abort", abort); resolve(); }, ms);
+    const abort = () => { clearTimeout(timer); reject(signal.reason); };
+    signal.addEventListener("abort", abort, { once: true });
+  });
 }
 
 // Settles with `promise`, or rejects as soon as `signal` aborts.

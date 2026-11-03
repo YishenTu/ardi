@@ -119,7 +119,7 @@ export default function registerChromeTools(pi: ExtensionAPI) {
     async execute(_id, params, signal) {
       if (params.action === "list") {
         const scripts = await request<InstalledUserscript[]>({ op: "scripts_list" }, signal);
-        const lines = scripts.map(s => `${s.id}\n    ${[...s.matches, ...(s.includeGlobs ?? [])].join(", ")}`);
+        const lines = scripts.map(s => `${s.id}\n    ${s.matches.join(", ")}`);
         return text(lines.length ? lines.join("\n") : "No userscripts are installed.", scripts);
       }
       if (params.action === "uninstall") {

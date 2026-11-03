@@ -8,7 +8,6 @@ export type Userscript = {
   id: string;
   matches: string[];
   excludeMatches?: string[];
-  includeGlobs?: string[];
   excludeGlobs?: string[];
   runAt: "document_start" | "document_end" | "document_idle";
   world: "MAIN" | "USER_SCRIPT";
