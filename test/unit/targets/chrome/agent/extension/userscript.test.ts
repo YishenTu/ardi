@@ -29,19 +29,14 @@ test("Ardia's defaults and keys map to the same behaviour in Chrome", () => {
   expect(warnings.join("\n")).toContain("@grant");
 });
 
-test("an @include glob that is also a match pattern runs only on the pages it covers", () => {
-  const { script, pages } = parseUserscript(header("@name News", "@include https://news.test/*", "@include *://*.blog.test/*") + "1;\n", "news.user.js");
-  // Registered as Chrome match patterns: nothing broader, and the code is left as written.
-  expect(script.matches).toEqual(["https://news.test/*", "*://*.blog.test/*"]);
-  expect(script.code).toBe(header("@name News", "@include https://news.test/*", "@include *://*.blog.test/*") + "1;\n");
-  expect(runsOn(pages, "https://news.test/today")).toBe(true);
-  expect(runsOn(pages, "https://www.blog.test/post")).toBe(true);
-  expect(runsOn(pages, "https://bank.test/")).toBe(false);
-});
-
-test("an @include glob Chrome can't limit a script to is refused, not widened", () => {
-  expect(() => parseUserscript(header("@name Loose", "@include http*://news.test/*") + "1;", "loose.user.js")).toThrow("@match");
-  expect(() => parseUserscript(header("@name Odd", "@include https://news.test/a?b") + "1;", "odd.user.js")).toThrow("@match");
+// A glob covers different pages than the same text as a match pattern (the
+// apex host, other ports, fragments), and Chrome can't narrow by globs, so
+// Chrome asks for @match rather than guessing.
+test("@include is refused with a pointer to @match, so a script never runs more widely than it says", () => {
+  for (const include of ["https://*.example.com/*", "https://example.com/*", "http*://news.test/*"]) {
+    expect(() => parseUserscript(header("@name Inc", `@include ${include}`) + "1;", "inc.user.js")).toThrow("@match");
+    expect(() => parseUserscript(header("@name Both", "@match https://a.test/*", `@include ${include}`) + "1;", "both.user.js")).toThrow("@match");
+  }
 });
 
 test("@match ignores the URL's fragment, as Chrome does", () => {

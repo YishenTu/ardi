@@ -9,12 +9,8 @@ import type { Userscript } from "../../protocol";
 const RUN_AT = { "document-start": "document_start", "document-end": "document_end", "document-idle": "document_idle" } as const;
 const IGNORED = new Set(["@grant", "@require", "@resource"]);
 
-// A glob that reads the same as a match pattern: no `?` or `\`, `*` only
-// as the scheme, a leading host label or anywhere in the path.
-const MATCHABLE = /^(\*|https?):\/\/(\*|(\*\.)?[^*/?\\]+)\/[^?\\]*$/;
-
-// Which pages a script runs on: an @match (or @include) covers it, and no
-// @exclude-match or @exclude does.
+// Which pages a script runs on: an @match covers it, and no @exclude-match
+// or @exclude does.
 export type Pages = { matches: string[]; excludeMatches: string[]; excludes: string[] };
 
 export function parseUserscript(source: string, file: string): { script: Userscript; pages: Pages; warnings: string[] } {
@@ -34,19 +30,14 @@ export function parseUserscript(source: string, file: string): { script: Userscr
   // There's no bundler on the user's machine: a script is one file.
   if (/^\s*(import|export)\b/m.test(code)) throw new Error(`${file} imports or exports: a userscript in Chrome must be one file`);
 
-  const includes = all("@include");
-  if (!all("@match").length && !includes.length) throw new Error(`${file} needs an @match (or @include) saying which pages it runs on`);
+  // A glob covers different pages than the same text as a match pattern,
+  // and Chrome can't narrow a script by globs, so ask for @match instead.
+  if (keys.has("@include")) throw new Error(`${file} uses @include, which Chrome can't limit a script to; write its pages as @match patterns (scheme://host/path, * as a wildcard)`);
+  if (!all("@match").length) throw new Error(`${file} needs an @match saying which pages it runs on`);
   const runAt = RUN_AT[(one("@run-at") ?? "document-end") as keyof typeof RUN_AT];
   if (!runAt) throw new Error(`${file}: @run-at must be document-start, document-end or document-idle`);
 
-  // Chrome injects where `matches` OR `includeGlobs` cover, and `matches`
-  // can't be empty, so a glob can't narrow anything. An @include that is
-  // also a match pattern is used as one; any other is refused rather than
-  // run more widely than it says.
-  for (const include of includes) {
-    if (!MATCHABLE.test(include)) throw new Error(`${file}: Chrome can't limit a script to @include ${include}; write it as an @match pattern (scheme://host/path, * as a wildcard)`);
-  }
-  const pages: Pages = { matches: [...all("@match"), ...includes], excludeMatches: all("@exclude-match"), excludes: all("@exclude") };
+  const pages: Pages = { matches: all("@match"), excludeMatches: all("@exclude-match"), excludes: all("@exclude") };
   // Every filter is sent, empty or not: reinstalling replaces them all.
   const script: Userscript = {
     id: name,
