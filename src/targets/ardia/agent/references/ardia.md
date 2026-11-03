@@ -8,6 +8,9 @@
 - `tabs`: every web page tab when the run starts, the user's own included, plus the ones `new_tab` opens.
 - `new_tab(url, background=True)`: opens a tab, waits for the page to load and returns it. `background=False` switches the user to it.
 - `js(expression, tab=None)`: evaluates JavaScript and returns its value (awaiting promises; raises on a JavaScript error). Pass `tab=t` for your own tab; without it, `js` uses the user's tab, else the last tab you opened.
+- `await run(command, arg=None, window=None)`, `await windows()` and `async for e in events(*names)`: Ardia's own commands, its windows with their tabs, and its events as they happen. See the sibling `ardia-app.md` file.
+- `await history(days=1, limit=200, profile=None, domains=False)`: the user's recent browsing history per URL, newest first (`url`, `title`, `visits` in the window, `total_visits`, `last_visit`, `profile`). `domains=True` rolls it up per domain (`domain`, `pages`, `visits`, `top_title`, `last_visit`, `profile`). Only http(s) pages, never private windows. Read it only when the request is about what the user browsed ("what did I read yesterday", "that article I saw this week").
+- For the user's pinned tabs, use `windows()` (each tab has `pinned` and `group`); `pinned()` reads a saved-session format some Ardia builds no longer write, so it can return nothing.
 - `browser` (pydoll `Chrome`), `By`, `Key`, `asyncio` and the rest of pydoll's exports. Full API: the sibling `pydoll.md` file (its absolute path is in the ardia_exec tool description).
 
 ## Tab ids
