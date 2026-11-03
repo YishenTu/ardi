@@ -11,7 +11,8 @@ const PREVIEW_LINES = 12;
 // thing share a view, so every build looks alike.
 type View = "tabs" | "tab" | "opened_tab" | "image" | "code" | "shell" | "write" | "edit" | "search" | "files";
 
-const TOOLS: Record<string, { label: string; view: View }> = {
+// Without a view, a tool shows its input as key and value rows.
+const TOOLS: Record<string, { label: string; view?: View }> = {
   list_tabs: { label: "Listed tabs", view: "tabs" },
   read_tab: { label: "Read tab", view: "tab" },
   view_image: { label: "Viewed image", view: "image" },
@@ -19,6 +20,7 @@ const TOOLS: Record<string, { label: string; view: View }> = {
   // Each browser's own way to act in the page: Python in Ardia, JavaScript in Chrome.
   ardia_exec: { label: "Ran in browser", view: "code" },
   browser_exec: { label: "Ran in browser", view: "code" },
+  userscript: { label: "Userscript" },
   read: { label: "Read", view: "files" },
   write: { label: "Wrote", view: "write" },
   edit: { label: "Edited", view: "edit" },

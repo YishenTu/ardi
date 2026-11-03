@@ -2,7 +2,7 @@
 
 These tools act through the Ardi extension in the browser the user is already
 using. Their existing tabs and signed-in sessions are available. Do not launch a
-browser, use a debugging port, run `ardia`, or use the old Python recipes.
+browser or use a debugging port.
 
 `list_tabs` returns browser tab IDs as strings. `read_tab`, `view_image` and
 `browser_exec` accept an id or exact URL; omitting both selects the active tab in
