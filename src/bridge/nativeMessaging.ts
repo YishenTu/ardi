@@ -1,7 +1,8 @@
 // Chrome native messaging framing on our stdin/stdout: each message is a
 // 4-byte little-endian length + UTF-8 JSON. Nothing else may write to stdout.
 
-import type { BridgeEvent, BridgePart } from "./protocol";
+import { toParts } from "../parts";
+import type { BridgeEvent } from "./protocol";
 
 // Chrome rejects host -> extension messages over 1 MB. A UTF-16 code unit is
 // at most 3 UTF-8 bytes, so parts of this many characters stay well under.
@@ -13,20 +14,7 @@ let closing = false;
 
 // Sends an event, split into parts when it's too big for one message.
 export function sendToExtension(event: BridgeEvent): void {
-  const json = JSON.stringify(event);
-  if (json.length <= PART_CHARS) return write(json);
-  for (let start = 0; start < json.length; ) {
-    let end = Math.min(start + PART_CHARS, json.length);
-    // Keep a surrogate pair (an emoji, say) in one part.
-    if (end < json.length && isHighSurrogate(json.charCodeAt(end - 1))) end--;
-    const part: BridgePart = { type: "part", data: json.slice(start, end), last: end === json.length };
-    write(JSON.stringify(part));
-    start = end;
-  }
-}
-
-function isHighSurrogate(code: number): boolean {
-  return code >= 0xd800 && code <= 0xdbff;
+  for (const message of toParts(event, PART_CHARS)) write(JSON.stringify(message));
 }
 
 function write(json: string): void {

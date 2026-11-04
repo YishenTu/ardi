@@ -1,3 +1,4 @@
+import type { ImageAttachment } from "../chat";
 import type { TabMention } from "../mention";
 
 // Small DOM helpers shared by the panel's views.
@@ -48,4 +49,8 @@ export function host(url: string): string {
   } catch {
     return url;
   }
+}
+
+export function imageUrl(image: ImageAttachment): string {
+  return `data:${image.mimeType};base64,${image.data}`;
 }

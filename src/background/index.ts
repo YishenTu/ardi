@@ -1,3 +1,4 @@
+import { joinParts } from "../parts";
 import { PANEL_PORT, type PanelRequest, type SettingsAnswers, type SettingsRequest } from "../shared";
 import * as pi from "./pi-session";
 import * as settings from "./settings";
@@ -17,7 +18,7 @@ export function startBackground(target: BackgroundTarget): void {
     if (port.name !== PANEL_PORT) return;
     void pi.attachPanel(port);
     void pi.start();
-    port.onMessage.addListener((req: PanelRequest) => void handle(req));
+    port.onMessage.addListener(joinParts<PanelRequest>((req) => void handle(req)));
   });
 
   // The settings screen's questions. Answered asynchronously (return true).
@@ -31,7 +32,7 @@ export function startBackground(target: BackgroundTarget): void {
 function handle(req: PanelRequest) {
   switch (req.kind) {
     case "prompt":
-      return pi.prompt(req.text);
+      return pi.prompt(req.text, req.images);
     case "abort":
       return pi.abort();
     case "restart":

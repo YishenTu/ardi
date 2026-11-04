@@ -6,7 +6,8 @@ import "../../support/indexeddb";
 import { IDBObjectStore } from "fake-indexeddb";
 import { beforeEach, describe, expect, test } from "bun:test";
 
-import { chromeFake, FakePort } from "../../support/chrome";
+import { CHROME_MAX_MESSAGE_BYTES, chromeFake, FakePort } from "../../support/chrome";
+import { joinParts } from "../../../src/parts";
 import { waitFor } from "../../support/wait";
 import type { BridgeEvent } from "../../../src/bridge/protocol";
 import type { ChatChunk, ChatMessage } from "../../../src/chat";
@@ -77,6 +78,29 @@ describe("background pi session", () => {
     const [chat] = await store.listSessions();
     expect(chat.title).toBe("Plan a trip like @Kyoto in 3 days, with temples, food market");
     await waitFor(() => expect(last("sessions")?.sessions).toHaveLength(1));
+  });
+
+  test("images sent with a message go to pi and show in the chat", async () => {
+    const images = [{ data: "aGk=", mimeType: "image/png" }];
+    await pi.prompt("what's this?", images);
+    expect(bridge().sent.at(-1)).toEqual({ type: "prompt", text: "what's this?", images });
+    expect(last("live")).toEqual({ kind: "live", item: { kind: "prompt", text: "what's this?", images, at: expect.any(Number) } });
+  });
+
+  test("an image bigger than one Chrome message still reaches pi and a reopened panel", async () => {
+    const data = "A".repeat(CHROME_MAX_MESSAGE_BYTES + 1024);
+    await pi.prompt("look", [{ data, mimeType: "image/png" }]);
+    const toBridge: unknown[] = [];
+    bridge().sent.forEach(joinParts((request) => toBridge.push(request)));
+    expect(toBridge.at(-1)).toMatchObject({ type: "prompt", text: "look", images: [{ mimeType: "image/png" }] });
+    expect((toBridge.at(-1) as { images: { data: string }[] }).images[0].data).toHaveLength(data.length);
+
+    const reopened = await attach();
+    const toPanel: PanelUpdate[] = [];
+    reopened.sent.forEach(joinParts<PanelUpdate>((update) => toPanel.push(update)));
+    const replay = toPanel.find((u) => u.kind === "replay");
+    expect(replay?.live[0]).toMatchObject({ kind: "prompt", text: "look" });
+    expect(toPanel.at(-1)?.kind).toBe("sessions");
   });
 
   test("starting twice at once opens one bridge", async () => {

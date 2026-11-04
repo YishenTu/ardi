@@ -1,6 +1,7 @@
-import type { ChatMessage, ModelState, PiCommand, ThinkingLevel } from "../chat";
+import type { ChatMessage, ImageAttachment, ModelState, PiCommand, ThinkingLevel } from "../chat";
 import { joinParts, type BridgeEvent, type BridgeRequest } from "../bridge/protocol";
 import { plainMentions } from "../mention";
+import { postInParts } from "../parts";
 import type { LiveItem, PanelUpdate, PiStatus, SessionMeta } from "../shared";
 import { loadSettings } from "./settings";
 import * as store from "./store";
@@ -64,7 +65,7 @@ function setSession(next: SessionMeta) {
 }
 
 function broadcast(update: PanelUpdate) {
-  for (const p of panels) p.postMessage(update);
+  for (const p of panels) postInParts(p, update);
 }
 
 function setStatus(s: PiStatus) {
@@ -90,7 +91,7 @@ function pushLive(item: LiveItem) {
 }
 
 function post(request: BridgeRequest) {
-  port?.postMessage(request);
+  if (port) postInParts(port, request);
 }
 
 async function onBridgeEvent(event: Exclude<BridgeEvent, { type: "browser_request" | "browser_cancel" }>) {
@@ -147,7 +148,7 @@ export async function start() {
   live = [];
   const p = chrome.runtime.connectNative(target().nativeHost);
   // Replies go only to the port that asked, not a replacement.
-  const link = target().connectBrowser?.((reply) => { if (port === p) p.postMessage(reply); }) ?? null;
+  const link = target().connectBrowser?.((reply) => { if (port === p) postInParts(p, reply); }) ?? null;
   browser = link;
   p.onMessage.addListener(joinParts((event) => {
     if (port !== p) return;
@@ -216,7 +217,7 @@ export async function deleteSession(id: number) {
   await switchTo(latest ?? draft());
 }
 
-export async function prompt(text: string) {
+export async function prompt(text: string, images?: ImageAttachment[]) {
   await start();
   const origin = port;
   const accept = browser?.preparePrompt();
@@ -233,12 +234,12 @@ export async function prompt(text: string) {
   } else {
     await store.putSession(session);
   }
-  pushLive({ kind: "prompt", text, at: Date.now() });
+  pushLive({ kind: "prompt", text, images, at: Date.now() });
   // A restart during storage writes must not drop the message. Permission
   // callbacks belong to their original controller, not the replacement port.
   const promptId = port === origin && accept ? crypto.randomUUID() : undefined;
   if (promptId && accept) pendingPrompts.set(promptId, accept);
-  post({ type: "prompt", text, promptId });
+  post({ type: "prompt", text, images, promptId });
 }
 
 export function abort() {
@@ -262,6 +263,6 @@ export async function attachPanel(p: chrome.runtime.Port) {
   panels.add(p);
   p.onDisconnect.addListener(() => panels.delete(p));
   await ready;
-  p.postMessage(replay());
-  p.postMessage(await sessionsUpdate());
+  postInParts(p, replay());
+  postInParts(p, await sessionsUpdate());
 }

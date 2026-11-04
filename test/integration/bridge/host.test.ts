@@ -10,6 +10,7 @@ import { join, resolve } from "node:path";
 import { FAKE_PI } from "../../support/executables";
 import { waitFor } from "../../support/wait";
 import { joinParts, type BridgeEvent, type BridgeRequest } from "../../../src/bridge/protocol";
+import { toParts } from "../../../src/parts";
 
 const MAIN = resolve(import.meta.dirname, "../../../src/targets/ardia/bridge/main.ts");
 
@@ -126,3 +127,13 @@ test("a fatal error reaches a slow reader before the bridge exits", async () => 
     delete process.env.FAKE_PI_LAUNCH_LOG;
   }
 }, 20_000);
+
+test("takes a request the extension sent in parts", async () => {
+  const events = startBridge();
+  bridge.stdin.write(frame({ type: "start", piPath: FAKE_PI }));
+  await waitFor(() => expect(events.map((e) => e.type)).toContain("ready"), 10_000);
+  const parts = toParts({ type: "prompt", text: "in pieces" }, 8) as BridgeRequest[];
+  expect(parts.length).toBeGreaterThan(1);
+  bridge.stdin.write(Buffer.concat(parts.map(frame)));
+  await waitFor(() => expect(events).toContainEqual({ type: "chunk", chunk: { type: "text", content: "echo: in pieces" } }), 10_000);
+});

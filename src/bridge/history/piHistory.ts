@@ -4,11 +4,11 @@
 // tool-result mapping. Consecutive assistant entries of one run merge into
 // one message, as live output renders them.
 // Each run also gets its duration, output tokens and whether it was stopped.
-// TODO: branches/fork, images, subagents (all in Claudian).
+// TODO: branches/fork, subagents (both in Claudian).
 
 import { readFile } from "node:fs/promises";
 
-import type { AssistantBlock, ChatMessage, ToolCall } from "../../chat";
+import type { AssistantBlock, ChatMessage, ImageAttachment, ToolCall } from "../../chat";
 import { getPiCustomMessageDisplayText } from "../normalization/piEventNormalization";
 import { extractPiToolResultText, getRecord, getString, isPlainObject, normalizePiToolInput } from "../normalization/piToolNormalization";
 
@@ -68,7 +68,8 @@ function mapPiSessionEntries(entries: PiSessionEntry[]): ChatMessage[] {
     const writtenAt = getTimestamp(entry.raw.timestamp ?? message.timestamp);
 
     if (role === "user") {
-      messages.push({ role: "user", id, content: extractTextContent(message.content), timestamp });
+      const images = extractImages(message.content);
+      messages.push({ role: "user", id, content: extractTextContent(message.content), ...(images.length ? { images } : {}), timestamp });
       runStart = timestamp;
     } else if (role === "assistant") {
       const blocks = extractAssistantContentBlocks(message.content);
@@ -99,6 +100,16 @@ function mapPiSessionEntries(entries: PiSessionEntry[]): ChatMessage[] {
     }
   }
   return messages;
+}
+
+function extractImages(value: unknown): ImageAttachment[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((part) => {
+    if (!isPlainObject(part) || part.type !== "image") return [];
+    const data = getString(part.data);
+    const mimeType = getString(part.mimeType);
+    return data && mimeType ? [{ data, mimeType }] : [];
+  });
 }
 
 function extractAssistantContentBlocks(value: unknown): AssistantBlock[] {

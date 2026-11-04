@@ -21,6 +21,8 @@ class Event {
 
 // One end of a chrome.runtime.Port. `sent` is what the code under test
 // posted; `receive` and `close` act as the other end.
+export const CHROME_MAX_MESSAGE_BYTES = 64 * 1024 * 1024;
+
 export class FakePort {
   readonly sent: any[] = [];
   readonly onMessage = new Event();
@@ -39,6 +41,8 @@ export class FakePort {
   postMessage(message: unknown) {
     // Like Chrome, which throws on a disconnected port.
     if (this.disconnected) throw new Error("Attempting to use a disconnected port object");
+    // Chrome's cap on one message over an extension port or to a native host.
+    if (Buffer.byteLength(JSON.stringify(message)) > CHROME_MAX_MESSAGE_BYTES) throw new Error("Message length exceeded maximum allowed length.");
     this.sent.push(message);
     this.onPost?.(message);
   }
@@ -63,6 +67,8 @@ export class FakePort {
 const fake = {
   storage: new Map<string, unknown>(),
   nativePorts: [] as FakePort[],
+  // Ports opened with chrome.runtime.connect (the panel's).
+  ports: [] as FakePort[],
   // Called for each native connection, to script the bridge.
   onConnectNative: undefined as ((port: FakePort) => void) | undefined,
   // Answers chrome.runtime.sendMessage.
@@ -87,6 +93,7 @@ const fake = {
 export function resetChrome() {
   fake.storage.clear();
   fake.nativePorts.length = 0;
+  fake.ports.length = 0;
   fake.onConnectNative = undefined;
   fake.onSendMessage = undefined;
   fake.lastError = undefined;
@@ -139,6 +146,11 @@ export const chromeFake = fake;
   runtime: {
     get lastError() {
       return fake.lastError;
+    },
+    connect({ name = "" }: { name?: string } = {}) {
+      const port = new FakePort(name);
+      fake.ports.push(port);
+      return port;
     },
     connectNative(name: string) {
       const port = new FakePort(name);

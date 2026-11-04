@@ -1,4 +1,5 @@
 import type { ChatMessage, ModelState, PiCommand } from "../chat";
+import { joinParts, postInParts } from "../parts";
 import {
   PANEL_PORT,
   type LiveItem,
@@ -29,7 +30,7 @@ export class PiClient {
 
   connect() {
     const port = chrome.runtime.connect({ name: PANEL_PORT });
-    port.onMessage.addListener((u: PanelUpdate) => {
+    port.onMessage.addListener(joinParts<PanelUpdate>((u) => {
       switch (u.kind) {
         case "replay":
           this.on.status(u.status);
@@ -50,7 +51,7 @@ export class PiClient {
           this.on.sessions(u.sessions, u.currentId);
           break;
       }
-    });
+    }));
     // The service worker restarted; reconnect to the fresh one.
     port.onDisconnect.addListener(() => {
       this.port = null;
@@ -60,7 +61,7 @@ export class PiClient {
   }
 
   send(req: PanelRequest) {
-    this.port?.postMessage(req);
+    if (this.port) postInParts(this.port, req);
   }
 }
 

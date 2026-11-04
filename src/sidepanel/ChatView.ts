@@ -1,8 +1,9 @@
 import DOMPurify from "dompurify";
 import { marked } from "marked";
-import type { ChatChunk, ChatMessage, NoticeLevel, ToolCall } from "../chat";
+import type { ChatChunk, ChatMessage, ImageAttachment, NoticeLevel, ToolCall } from "../chat";
 import { splitMentions, type TabMention } from "../mention";
-import { el, opensTab, step, tabChip } from "./dom";
+import { el, imageUrl, opensTab, step, tabChip } from "./dom";
+import { openLightbox } from "./lightbox";
 import { toolCard, updateToolCard, type ToolState } from "./ToolCard";
 
 // Links in answers open in a new tab instead of navigating the panel.
@@ -49,17 +50,30 @@ export class ChatView {
 
   renderHistory(messages: ChatMessage[]) {
     for (const message of messages) {
-      if (message.role === "user") this.addUser(message.content, message.timestamp);
+      if (message.role === "user") this.addUser(message.content, message.timestamp, message.images);
       else if (message.role === "notice") this.addNotice(message.content, message.level);
       else this.addAssistant(message);
     }
   }
 
-  addUser(text: string, at: number) {
+  addUser(text: string, at: number, images: ImageAttachment[] = []) {
     const entry = this.append(el("div", "entry user"));
-    const msg = el("div", "msg user");
-    for (const part of splitMentions(text)) msg.append(typeof part === "string" ? part : mentionLink(part));
-    entry.append(msg, footer({ copy: () => text, at }));
+    if (images.length) {
+      const row = entry.appendChild(el("div", "msg-attachments"));
+      for (const image of images) {
+        const tile = row.appendChild(el("div", "attachment"));
+        const img = tile.appendChild(el("img"));
+        img.src = imageUrl(image);
+        img.alt = "";
+        tile.title = "View full size";
+        tile.addEventListener("click", () => openLightbox(img.src));
+      }
+    }
+    if (text) {
+      const msg = entry.appendChild(el("div", "msg user"));
+      for (const part of splitMentions(text)) msg.append(typeof part === "string" ? part : mentionLink(part));
+    }
+    entry.append(footer({ copy: () => text, at }));
   }
 
   addNotice(text: string, level: NoticeLevel) {
