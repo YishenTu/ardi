@@ -56,7 +56,7 @@ export async function runBridge(target: BridgeTarget): Promise<void> {
         case "set_thinking_level":
           return void session.setThinkingLevel(request.level);
       }
-    }) as (message: unknown) => void,
+    }),
     () => {
       relay?.dispose();
       void session.shutdown().finally(() => exitAfterFlush(0));

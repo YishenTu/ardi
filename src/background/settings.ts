@@ -1,4 +1,5 @@
-import { joinParts, type PiCheck } from "../bridge/protocol";
+import type { BridgeEvent, PiCheck } from "../bridge/protocol";
+import { joinParts, postInParts } from "../parts";
 import type { Settings } from "../shared";
 import { target } from "./target";
 
@@ -28,7 +29,7 @@ export function checkPi(piPath: string): Promise<PiCheck> {
   return new Promise((resolve) => {
     const port = chrome.runtime.connectNative(target().nativeHost);
     port.onMessage.addListener(
-      joinParts((event) => {
+      joinParts<BridgeEvent>((event) => {
         if (event.type !== "pi_check") return;
         const { type: _, ...check } = event;
         resolve(check);
@@ -38,6 +39,6 @@ export function checkPi(piPath: string): Promise<PiCheck> {
     port.onDisconnect.addListener(() => {
       resolve({ command: piPath, error: chrome.runtime.lastError?.message ?? "The bridge closed" });
     });
-    port.postMessage({ type: "check_pi", piPath: piPath || undefined });
+    postInParts(port, { type: "check_pi", piPath: piPath || undefined });
   });
 }

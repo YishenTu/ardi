@@ -69,10 +69,6 @@ export class Attachments {
     this.tray.hidden = !this.items.length;
   }
 
-  get count(): number {
-    return this.items.length;
-  }
-
   // Empties the tray at once and returns its images for the message being
   // sent, waiting for any still being read.
   take(): Promise<ImageAttachment[]> {

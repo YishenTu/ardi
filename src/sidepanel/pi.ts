@@ -25,6 +25,9 @@ type Listener = {
 // outlives the panel; this connection only lasts while the panel is open.
 export class PiClient {
   private port: chrome.runtime.Port | null = null;
+  // Requests leave in the order they were made, so a prompt still reading
+  // its images can't be overtaken by a later prompt or a chat switch.
+  private outbox: Promise<void> = Promise.resolve();
 
   constructor(private on: Listener) {}
 
@@ -60,8 +63,12 @@ export class PiClient {
     this.port = port;
   }
 
-  send(req: PanelRequest) {
-    if (this.port) postInParts(this.port, req);
+  // A promise is a request still being prepared; null sends nothing.
+  send(req: PanelRequest | Promise<PanelRequest | null>) {
+    this.outbox = this.outbox.then(async () => {
+      const ready = await req;
+      if (ready && this.port) postInParts(this.port, ready);
+    });
   }
 }
 

@@ -5,10 +5,11 @@ import { CHROME_MAX_MESSAGE_BYTES, chromeFake } from "../../support/chrome";
 import { joinParts, toParts } from "../../../src/parts";
 import type { LiveItem, PanelRequest } from "../../../src/shared";
 import { PiClient } from "../../../src/sidepanel/pi";
+import { waitFor } from "../../support/wait";
 
 const noop = () => undefined;
 
-test("a prompt with an image bigger than one Chrome message reaches the background, and so does a big update back", () => {
+test("a prompt with an image bigger than one Chrome message reaches the background, and so does a big update back", async () => {
   const live: LiveItem[] = [];
   const client = new PiClient({ replay: noop, model: noop, commands: noop, live: (item) => live.push(item), status: noop, sessions: noop });
   client.connect();
@@ -16,6 +17,7 @@ test("a prompt with an image bigger than one Chrome message reaches the backgrou
 
   const data = "A".repeat(CHROME_MAX_MESSAGE_BYTES + 1024);
   client.send({ kind: "prompt", text: "look", images: [{ data, mimeType: "image/png" }] });
+  await waitFor(() => expect(port.sent.length).toBeGreaterThan(1));
   const requests: PanelRequest[] = [];
   port.sent.forEach(joinParts<PanelRequest>((request) => requests.push(request)));
   expect(requests).toHaveLength(1);
@@ -24,4 +26,28 @@ test("a prompt with an image bigger than one Chrome message reaches the backgrou
   const item: LiveItem = { kind: "prompt", text: "look", images: [{ data: "aGk=", mimeType: "image/png" }], at: 1 };
   for (const part of toParts({ kind: "live", item }, 8)) port.receive(part);
   expect(live).toEqual([item]);
+});
+
+test("requests go out in the order they were made, even while a prompt's images are still being read", async () => {
+  const client = new PiClient({ replay: noop, model: noop, commands: noop, live: noop, status: noop, sessions: noop });
+  client.connect();
+  const [port] = chromeFake.ports;
+  let read!: () => void;
+  const images = new Promise<void>((resolve) => (read = resolve));
+
+  client.send(images.then(() => ({ kind: "prompt", text: "first", images: [{ data: "aGk=", mimeType: "image/png" }] })));
+  client.send({ kind: "prompt", text: "second" });
+  client.send({ kind: "new_session" });
+  read();
+  await waitFor(() => expect(port.sent).toHaveLength(3));
+  expect(port.sent.map((r: PanelRequest) => (r.kind === "prompt" ? r.text : r.kind))).toEqual(["first", "second", "new_session"]);
+});
+
+test("a prompt that ends up empty (its only image couldn't be read) isn't sent", async () => {
+  const client = new PiClient({ replay: noop, model: noop, commands: noop, live: noop, status: noop, sessions: noop });
+  client.connect();
+  const [port] = chromeFake.ports;
+  client.send(Promise.resolve(null));
+  client.send({ kind: "abort" });
+  await waitFor(() => expect(port.sent).toEqual([{ kind: "abort" }]));
 });

@@ -7,7 +7,8 @@ import { join, resolve, sep } from "node:path";
 import { FAKE_PI } from "../support/executables";
 import { cleanUp, installEnv, LAUNCHER, readHostManifest, startHost, unzipFile } from "../support/nativeHost";
 import { waitFor } from "../support/wait";
-import { joinParts } from "../../src/bridge/protocol";
+import type { BridgeEvent } from "../../src/bridge/protocol";
+import { joinParts } from "../../src/parts";
 
 const root = resolve(import.meta.dirname, "../..");
 const run = async (args: string[], env = process.env) => {
@@ -54,7 +55,7 @@ test("both distributions build and install without overwriting each other", asyn
       const child = startHost(host.path, { ...process.env, ...homeEnv, FAKE_PI_LAUNCH_LOG: log, ARDI_BROWSER_MODE: target === "chrome" ? "ardia" : "chrome", ARDI_BROWSER_URL: "http://invalid.test" });
       const exited = new Promise(resolve => child.once("exit", resolve));
       let ready = false;
-      const receive = joinParts(event => { if (event.type === "ready") ready = true; });
+      const receive = joinParts<BridgeEvent>(event => { if (event.type === "ready") ready = true; });
       let pending = Buffer.alloc(0);
       child.stdout.on("data", (chunk: Buffer) => {
         pending = Buffer.concat([pending, chunk]);

@@ -110,13 +110,12 @@ const pi = new PiClient({
   sessions: renderSessions,
 });
 
-async function send(text: string) {
+function send(text: string) {
   text = text.trim();
-  if (!text && !attachments.count) return;
   input.value = "";
-  const images = await attachments.take();
-  // Echoed back as a live item, which renders it.
-  pi.send({ kind: "prompt", text, images: images.length ? images : undefined });
+  // Echoed back as a live item, which renders it. Goes once its images are
+  // read, still ahead of anything sent after it.
+  pi.send(attachments.take().then((images) => (text || images.length ? { kind: "prompt", text, images: images.length ? images : undefined } : null)));
 }
 
 // A different nudge each time the chat changes.
@@ -245,13 +244,13 @@ const picker = new ModelPicker($("options-toggle"), $("options"), $("options-tip
 
 form.addEventListener("submit", (e) => {
   e.preventDefault();
-  void send(input.value);
+  send(input.value);
 });
 input.el.addEventListener("keydown", (e) => {
   if (slash.keydown(e) || tabMenu.keydown(e)) return;
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
     e.preventDefault();
-    void send(input.value);
+    send(input.value);
   }
 });
 input.el.addEventListener("input", () => {
@@ -274,7 +273,7 @@ chats.addEventListener("toggle", (e) => {
   chatsToggle.setAttribute("aria-expanded", String(e.newState === "open"));
 });
 for (const button of document.querySelectorAll<HTMLButtonElement>(".suggestions button")) {
-  button.addEventListener("click", () => void send(button.dataset.prompt!));
+  button.addEventListener("click", () => send(button.dataset.prompt!));
 }
 
 pi.connect();

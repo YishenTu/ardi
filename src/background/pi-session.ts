@@ -1,7 +1,7 @@
 import type { ChatMessage, ImageAttachment, ModelState, PiCommand, ThinkingLevel } from "../chat";
-import { joinParts, type BridgeEvent, type BridgeRequest } from "../bridge/protocol";
+import type { BridgeEvent, BridgeRequest } from "../bridge/protocol";
 import { plainMentions } from "../mention";
-import { postInParts } from "../parts";
+import { joinParts, postInParts } from "../parts";
 import type { LiveItem, PanelUpdate, PiStatus, SessionMeta } from "../shared";
 import { loadSettings } from "./settings";
 import * as store from "./store";
@@ -150,7 +150,7 @@ export async function start() {
   // Replies go only to the port that asked, not a replacement.
   const link = target().connectBrowser?.((reply) => { if (port === p) postInParts(p, reply); }) ?? null;
   browser = link;
-  p.onMessage.addListener(joinParts((event) => {
+  p.onMessage.addListener(joinParts<BridgeEvent>((event) => {
     if (port !== p) return;
     if (event.type === "browser_request" || event.type === "browser_cancel") return link?.receive(event);
     void onBridgeEvent(event);

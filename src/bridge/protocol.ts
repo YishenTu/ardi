@@ -1,6 +1,5 @@
 // Messages between the extension's background and the bridge, over Chrome
 // native messaging.
-import { joinParts as join, type Part } from "../parts";
 import type { ChatChunk, ChatMessage, ImageAttachment, ModelState, PiCommand, ThinkingLevel } from "../chat";
 
 // A target can let pi's tools reach the extension through the bridge: the
@@ -48,11 +47,3 @@ export type BridgeEvent =
   | ({ type: "pi_check" } & PiCheck)
   // pi failed to start or exited; the bridge exits after sending this.
   | { type: "fatal"; message: string };
-
-// Events over 1 MB, and requests over 64 MiB, travel in parts (`src/parts.ts`).
-export type BridgePart = Part;
-
-// Wraps a bridge event listener to accept parts.
-export function joinParts(listener: (event: BridgeEvent) => void): (message: BridgeEvent | BridgePart) => void {
-  return join(listener);
-}
