@@ -28,8 +28,18 @@ export class PiClient {
   // Requests leave in the order they were made, so a prompt still reading
   // its images can't be overtaken by a later prompt or a chat switch.
   private outbox: Promise<void> = Promise.resolve();
+  // The port once connected. While the panel reconnects, queued requests
+  // wait here for the new one instead of being dropped.
+  private connected!: Promise<chrome.runtime.Port>;
+  private onConnected!: (port: chrome.runtime.Port) => void;
 
-  constructor(private on: Listener) {}
+  constructor(private on: Listener) {
+    this.awaitPort();
+  }
+
+  private awaitPort() {
+    this.connected = new Promise((resolve) => (this.onConnected = resolve));
+  }
 
   connect() {
     const port = chrome.runtime.connect({ name: PANEL_PORT });
@@ -58,26 +68,27 @@ export class PiClient {
     // The service worker restarted; reconnect to the fresh one.
     port.onDisconnect.addListener(() => {
       this.port = null;
+      this.awaitPort();
       setTimeout(() => this.connect(), 500);
     });
     this.port = port;
+    this.onConnected(port);
   }
 
   // A promise is a request still being prepared; null sends nothing. Stop
   // goes at once: it can't wait for a prompt's images.
   send(req: PanelRequest | Promise<PanelRequest | null>) {
-    if (!(req instanceof Promise) && req.kind === "abort") return this.post(req);
+    if (!(req instanceof Promise) && req.kind === "abort") {
+      if (this.port) postInParts(this.port, req);
+      return;
+    }
     this.outbox = this.outbox
       .then(async () => {
         const ready = await req;
-        if (ready) this.post(ready);
+        if (ready) postInParts(await this.connected, ready);
       })
       // A failed request (posted as the port died, say) mustn't block the rest.
       .catch((error: unknown) => console.error("panel request failed:", error));
-  }
-
-  private post(req: PanelRequest) {
-    if (this.port) postInParts(this.port, req);
   }
 }
 
