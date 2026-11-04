@@ -1,9 +1,8 @@
 // Chrome caps each message: 1 MB from a native host, and 64 MiB over an
-// extension port (to a native host it documents 4 GB, but messages pass
-// through the same 64 MiB IPC limit). Chats with images go past both, so a
-// big message travels as consecutive `part`s of its JSON, and `joinParts`
-// puts them back together. Parts never interleave: each message's parts
-// are posted in one go.
+// extension port, including to a native host. Chats with images go past
+// both, so a big message travels as consecutive `part`s of its JSON, and
+// `joinParts` puts them back together. Parts never interleave: each
+// message's parts are posted in one go.
 export type Part = { type: "part"; data: string; last: boolean };
 
 // For the panel's port and the native port's extension side. A UTF-16 code
