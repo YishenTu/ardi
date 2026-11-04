@@ -63,12 +63,21 @@ export class PiClient {
     this.port = port;
   }
 
-  // A promise is a request still being prepared; null sends nothing.
+  // A promise is a request still being prepared; null sends nothing. Stop
+  // goes at once: it can't wait for a prompt's images.
   send(req: PanelRequest | Promise<PanelRequest | null>) {
-    this.outbox = this.outbox.then(async () => {
-      const ready = await req;
-      if (ready && this.port) postInParts(this.port, ready);
-    });
+    if (!(req instanceof Promise) && req.kind === "abort") return this.post(req);
+    this.outbox = this.outbox
+      .then(async () => {
+        const ready = await req;
+        if (ready) this.post(ready);
+      })
+      // A failed request (posted as the port died, say) mustn't block the rest.
+      .catch((error: unknown) => console.error("panel request failed:", error));
+  }
+
+  private post(req: PanelRequest) {
+    if (this.port) postInParts(this.port, req);
   }
 }
 

@@ -1,5 +1,5 @@
 // The panel's side of its port to the background.
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 
 import { CHROME_MAX_MESSAGE_BYTES, chromeFake } from "../../support/chrome";
 import { joinParts, toParts } from "../../../src/parts";
@@ -50,4 +50,30 @@ test("a prompt that ends up empty (its only image couldn't be read) isn't sent",
   client.send(Promise.resolve(null));
   client.send({ kind: "abort" });
   await waitFor(() => expect(port.sent).toEqual([{ kind: "abort" }]));
+});
+
+test("stop goes at once, without waiting for a prompt still reading its images", () => {
+  const client = new PiClient({ replay: noop, model: noop, commands: noop, live: noop, status: noop, sessions: noop });
+  client.connect();
+  const [port] = chromeFake.ports;
+  client.send(new Promise<PanelRequest>(noop));
+  client.send({ kind: "abort" });
+  expect(port.sent).toEqual([{ kind: "abort" }]);
+});
+
+test("a request that fails to post doesn't stop the ones after it", async () => {
+  const client = new PiClient({ replay: noop, model: noop, commands: noop, live: noop, status: noop, sessions: noop });
+  client.connect();
+  const [port] = chromeFake.ports;
+  const post = port.postMessage.bind(port);
+  let fail = true;
+  port.postMessage = (message: unknown) => {
+    if (fail) { fail = false; throw new Error("Attempting to use a disconnected port object"); }
+    post(message);
+  };
+  const errors = spyOn(console, "error").mockImplementation(noop);
+  client.send({ kind: "new_session" });
+  client.send({ kind: "compact" });
+  await waitFor(() => expect(port.sent).toEqual([{ kind: "compact" }]));
+  errors.mockRestore();
 });
