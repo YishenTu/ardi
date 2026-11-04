@@ -179,6 +179,28 @@ describe("background pi session", () => {
     expect(await store.listSessions()).toHaveLength(1);
   });
 
+  test("a new chat asked for while the first message is still being stored opens after it", async () => {
+    await Promise.all([pi.prompt("first"), pi.newSession()]);
+    expect((await store.listSessions()).map((chat) => chat.title)).toEqual(["first"]);
+    expect(bridge().sent.map((request: { type: string }) => request.type)).toEqual(["start", "prompt", "open"]);
+    expect(last("replay")).toMatchObject({ session: { id: 0 }, live: [] });
+  });
+
+  test("a message sent just before a chat switch stays in the chat it was sent from", async () => {
+    await storedChat();
+    await Promise.all([pi.prompt("again"), pi.newSession()]);
+    expect(bridge().sent.map((request: { type: string }) => request.type).slice(-2)).toEqual(["prompt", "open"]);
+    expect(last("replay")).toMatchObject({ session: { id: 0 }, live: [] });
+  });
+
+  test("stop isn't held up behind a message still being stored", async () => {
+    await storedChat();
+    const sending = pi.prompt("again");
+    pi.abort();
+    expect(bridge().sent.at(-1)).toEqual({ type: "abort" });
+    await sending;
+  });
+
   test("switching back to a stored chat opens its session file", async () => {
     const chat = await storedChat();
     await pi.newSession();

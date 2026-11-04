@@ -5,3 +5,4 @@
 - Settings are owned here (`settings.ts`): this is the only code that writes them, and it answers the side panel's `SettingsRequest`s.
 - Post on every port (native and panel) with `postInParts` and read every port through `joinParts` (both in `src/parts.ts`). Chrome caps messages at 1 MB from the bridge and 64 MiB elsewhere; long chats and images go past both.
 - Session changes come only from the extension (new chat, switch chat), sent to the running pi as `open` (pi switches session in place; no restart). Don't re-query or follow pi's session during a run.
+- Requests that change the chat or reach pi (prompt, chat switches, compact, model) run one at a time through `inOrder` in `pi-session.ts`, so a message still being stored can't land in the next chat. Stop and restart skip the queue; nothing queued may wait on pi.

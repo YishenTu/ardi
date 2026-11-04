@@ -77,3 +77,11 @@ test("a request that fails to post doesn't stop the ones after it", async () => 
   await waitFor(() => expect(port.sent).toEqual([{ kind: "compact" }]));
   errors.mockRestore();
 });
+
+test("a request made while the panel reconnects goes to the new connection", async () => {
+  const client = new PiClient({ replay: noop, model: noop, commands: noop, live: noop, status: noop, sessions: noop });
+  client.connect();
+  chromeFake.ports[0].close();
+  client.send({ kind: "new_session" });
+  await waitFor(() => expect(chromeFake.ports[1]?.sent).toEqual([{ kind: "new_session" }]));
+});

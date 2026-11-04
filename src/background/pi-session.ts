@@ -173,6 +173,20 @@ export async function start() {
   if (port === p) post({ type: "start", sessionFile: session.piSessionFile, piPath: piPath || undefined });
 }
 
+// What the panel and settings ask for runs one request at a time, in the
+// order asked: a message still being stored must not land in a chat the user
+// switched to meanwhile, nor be passed by a new chat. Stop and restart don't
+// wait: a message being stored when pi restarts goes to the new pi.
+let queue: Promise<unknown> = Promise.resolve();
+
+function inOrder<A extends unknown[]>(run: (...args: A) => unknown): (...args: A) => Promise<void> {
+  return (...args) => {
+    const done = queue.then(() => run(...args)).then(() => undefined);
+    queue = done.catch((error: unknown) => console.error("request failed:", error));
+    return done;
+  };
+}
+
 // Restarts the pi process; pi resumes the same session. Also applies
 // changed settings.
 export async function restart() {
@@ -198,26 +212,26 @@ async function switchTo(next: SessionMeta) {
   } else await start();
 }
 
-export async function newSession() {
+export const newSession = inOrder(async () => {
   await ready;
   if (!isDraft(session)) await switchTo(draft());
-}
+});
 
-export async function switchSession(id: number) {
+export const switchSession = inOrder(async (id: number) => {
   await ready;
   const meta = await store.getSession(id);
   if (meta && meta.id !== session.id) await switchTo(meta);
-}
+});
 
-export async function deleteSession(id: number) {
+export const deleteSession = inOrder(async (id: number) => {
   await ready;
   await store.deleteSession(id);
   if (id !== session.id) return broadcastSessions();
   const [latest] = await store.listSessions();
   await switchTo(latest ?? draft());
-}
+});
 
-export async function prompt(text: string, images?: ImageAttachment[]) {
+export const prompt = inOrder(async (text: string, images?: ImageAttachment[]) => {
   await start();
   const origin = port;
   const accept = browser?.preparePrompt();
@@ -240,24 +254,24 @@ export async function prompt(text: string, images?: ImageAttachment[]) {
   const promptId = port === origin && accept ? crypto.randomUUID() : undefined;
   if (promptId && accept) pendingPrompts.set(promptId, accept);
   post({ type: "prompt", text, images, promptId });
-}
+});
 
 export function abort() {
   browser?.cancel();
   post({ type: "abort" });
 }
 
-export function compact() {
+export const compact = inOrder(() => {
   post({ type: "compact" });
-}
+});
 
-export function setModel(provider: string, modelId: string) {
+export const setModel = inOrder((provider: string, modelId: string) => {
   post({ type: "set_model", provider, modelId });
-}
+});
 
-export function setThinkingLevel(level: ThinkingLevel) {
+export const setThinkingLevel = inOrder((level: ThinkingLevel) => {
   post({ type: "set_thinking_level", level });
-}
+});
 
 export async function attachPanel(p: chrome.runtime.Port) {
   panels.add(p);
