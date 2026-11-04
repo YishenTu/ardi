@@ -1,4 +1,5 @@
 import type { ChatMessage, ModelState, PiCommand } from "../chat";
+import { joinParts, postInParts } from "../parts";
 import {
   PANEL_PORT,
   type LiveItem,
@@ -24,12 +25,15 @@ type Listener = {
 // outlives the panel; this connection only lasts while the panel is open.
 export class PiClient {
   private port: chrome.runtime.Port | null = null;
+  // Requests leave in the order they were made, so a prompt still reading
+  // its images can't be overtaken by a later prompt or a chat switch.
+  private outbox: Promise<void> = Promise.resolve();
 
   constructor(private on: Listener) {}
 
   connect() {
     const port = chrome.runtime.connect({ name: PANEL_PORT });
-    port.onMessage.addListener((u: PanelUpdate) => {
+    port.onMessage.addListener(joinParts<PanelUpdate>((u) => {
       switch (u.kind) {
         case "replay":
           this.on.status(u.status);
@@ -50,7 +54,7 @@ export class PiClient {
           this.on.sessions(u.sessions, u.currentId);
           break;
       }
-    });
+    }));
     // The service worker restarted; reconnect to the fresh one.
     port.onDisconnect.addListener(() => {
       this.port = null;
@@ -59,8 +63,21 @@ export class PiClient {
     this.port = port;
   }
 
-  send(req: PanelRequest) {
-    this.port?.postMessage(req);
+  // A promise is a request still being prepared; null sends nothing. Stop
+  // goes at once: it can't wait for a prompt's images.
+  send(req: PanelRequest | Promise<PanelRequest | null>) {
+    if (!(req instanceof Promise) && req.kind === "abort") return this.post(req);
+    this.outbox = this.outbox
+      .then(async () => {
+        const ready = await req;
+        if (ready) this.post(ready);
+      })
+      // A failed request (posted as the port died, say) mustn't block the rest.
+      .catch((error: unknown) => console.error("panel request failed:", error));
+  }
+
+  private post(req: PanelRequest) {
+    if (this.port) postInParts(this.port, req);
   }
 }
 

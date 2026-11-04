@@ -6,7 +6,8 @@ import { resolve } from "node:path";
 
 import { FAKE_PI } from "../../../../support/executables";
 import { waitFor } from "../../../../support/wait";
-import { joinParts, type BridgeEvent, type BridgeRequest } from "../../../../../src/bridge/protocol";
+import { type BridgeEvent, type BridgeRequest } from "../../../../../src/bridge/protocol";
+import { joinParts } from "../../../../../src/parts";
 
 const MAIN = resolve(import.meta.dirname, "../../../../../src/targets/chrome/bridge/main.ts");
 
@@ -25,7 +26,7 @@ function frame(request: BridgeRequest): Buffer {
 // Starts the bridge and collects the events it sends, as the extension reads them.
 function startBridge(): BridgeEvent[] {
   const events: BridgeEvent[] = [];
-  const listen = joinParts((event) => events.push(event));
+  const listen = joinParts<BridgeEvent>((event) => events.push(event));
   bridge = spawn(process.execPath, [MAIN], { env: process.env });
   let buffer = Buffer.alloc(0);
   bridge.stdout.on("data", (chunk: Buffer) => {

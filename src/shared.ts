@@ -1,7 +1,7 @@
 import type { PiCheck } from "./bridge/protocol";
 // So the panel gets it from here, not from the bridge.
 export type { PiCheck };
-import type { ChatChunk, ChatMessage, ModelState, PiCommand, ThinkingLevel } from "./chat";
+import type { ChatChunk, ChatMessage, ImageAttachment, ModelState, PiCommand, ThinkingLevel } from "./chat";
 
 // Port name the side panel uses to connect to the background.
 export const PANEL_PORT = "sidepanel";
@@ -21,11 +21,11 @@ export type SessionMeta = {
 
 // What happened since pi started, on top of the history it reported:
 // prompts the user sent and chunks pi streamed back. In memory only.
-export type LiveItem = { kind: "prompt"; text: string; at: number } | { kind: "chunk"; chunk: ChatChunk };
+export type LiveItem = { kind: "prompt"; text: string; images?: ImageAttachment[]; at: number } | { kind: "chunk"; chunk: ChatChunk };
 
 // Side panel -> background, over the panel's port.
 export type PanelRequest =
-  | { kind: "prompt"; text: string }
+  | { kind: "prompt"; text: string; images?: ImageAttachment[] }
   | { kind: "abort" }
   | { kind: "compact" }
   | { kind: "restart" } // restart pi, same session

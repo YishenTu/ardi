@@ -75,6 +75,15 @@ describe("PiSession", () => {
     ]);
   });
 
+  test("images sent with a prompt reach pi and come back in the saved history", async () => {
+    const images = [{ data: "aGk=", mimeType: "image/png" }];
+    void startSession().prompt("what's this?", { images });
+    await waitFor(() => expect(chunks().at(-1)?.type).toBe("run_end"));
+    await session.shutdown();
+    startSession((await ready(0)).sessionFile);
+    expect((await ready(0)).history[0]).toMatchObject({ role: "user", content: "what's this?", images });
+  });
+
   test("resuming a saved session brings back its history", async () => {
     const file = await chatOnce("remember me");
     startSession(file);
@@ -136,11 +145,11 @@ describe("PiSession", () => {
 test("browser permission results distinguish started, rejected and handled prompts", async () => {
   startSession();
   await ready(0);
-  await session.prompt("reject:busy", "rejected");
+  await session.prompt("reject:busy", { promptId: "rejected" });
   expect(events).toContainEqual({ type: "prompt_result", promptId: "rejected", started: false });
   expect(chunks()).toContainEqual({ type: "notice", content: expect.stringContaining("already streaming"), level: "error" });
-  await session.prompt("handled:command", "handled");
+  await session.prompt("handled:command", { promptId: "handled" });
   expect(events).toContainEqual({ type: "prompt_result", promptId: "handled", started: false });
-  await session.prompt("accepted", "accepted");
+  await session.prompt("accepted", { promptId: "accepted" });
   expect(events).toContainEqual({ type: "prompt_result", promptId: "accepted", started: true });
 });

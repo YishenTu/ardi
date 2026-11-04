@@ -110,6 +110,15 @@ describe("history", () => {
     expect(msg.textContent).toBe("compare Hacker News with this");
     expect(msg.querySelector<HTMLAnchorElement>("a.tab-chip")!.href).toBe("https://news.ycombinator.com/");
   });
+
+  test("a message's images show as thumbnails above it, and one opens full size", () => {
+    view.renderHistory([{ role: "user", id: "u", content: "what's this?", timestamp: 0, images: [{ data: "aGk=", mimeType: "image/png" }] }]);
+    const thumb = root.querySelector<HTMLImageElement>(".entry.user .msg-attachments img")!;
+    expect(thumb.src).toBe("data:image/png;base64,aGk=");
+    thumb.click();
+    expect($("lightbox").hidden).toBe(false);
+    expect($("lightbox").querySelector("img")!.src).toBe(thumb.src);
+  });
 });
 
 describe("the empty state", () => {

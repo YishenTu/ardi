@@ -6,6 +6,7 @@
 import { exitAfterFlush, onExtensionMessage, sendToExtension } from "./nativeMessaging";
 import { checkPi, type PiTarget } from "./launch";
 import { PiSession } from "./PiSession";
+import { joinParts } from "../parts";
 import { RELAY_TOKEN_ENV, RELAY_URL_ENV, type BridgeEvent, type BridgeRequest, type BrowserReply } from "./protocol";
 
 // A local endpoint pi's tools call to reach the extension (see protocol.ts).
@@ -34,8 +35,7 @@ export async function runBridge(target: BridgeTarget): Promise<void> {
   const session = new PiSession(target, (event: BridgeEvent) => sendToExtension(event), exitAfterFlush);
 
   onExtensionMessage(
-    (message) => {
-      const request = message as BridgeRequest;
+    joinParts<BridgeRequest>((request) => {
       switch (request.type) {
         case "browser_reply":
           return relay?.reply(request);
@@ -46,7 +46,7 @@ export async function runBridge(target: BridgeTarget): Promise<void> {
         case "open":
           return session.open(request.sessionFile);
         case "prompt":
-          return void session.prompt(request.text, request.promptId);
+          return void session.prompt(request.text, { promptId: request.promptId, images: request.images });
         case "abort":
           return void session.abort();
         case "compact":
@@ -56,7 +56,7 @@ export async function runBridge(target: BridgeTarget): Promise<void> {
         case "set_thinking_level":
           return void session.setThinkingLevel(request.level);
       }
-    },
+    }),
     () => {
       relay?.dispose();
       void session.shutdown().finally(() => exitAfterFlush(0));

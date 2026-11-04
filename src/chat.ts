@@ -20,9 +20,12 @@ export type AssistantBlock =
 
 export type NoticeLevel = "info" | "warning" | "error";
 
+// An image sent with a message, as pi takes it: base64 `data` and its type.
+export type ImageAttachment = { data: string; mimeType: string };
+
 // A message rebuilt from pi's session file.
 export type ChatMessage =
-  | { role: "user"; id: string; content: string; timestamp: number }
+  | { role: "user"; id: string; content: string; images?: ImageAttachment[]; timestamp: number }
   // A run: `durationMs` from the user's message to its last entry, which was
   // written at `completedAt`; `outputTokens` summed over the run's replies.
   | {

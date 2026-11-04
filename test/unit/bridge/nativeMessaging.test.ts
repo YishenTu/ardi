@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 
 import { sendToExtension } from "../../../src/bridge/nativeMessaging";
-import { joinParts, type BridgeEvent, type BridgePart } from "../../../src/bridge/protocol";
+import { type BridgeEvent } from "../../../src/bridge/protocol";
+import { joinParts, type Part } from "../../../src/parts";
 
 // Chrome's limit for one host -> extension message.
 const CHROME_MAX_BYTES = 1024 * 1024;
@@ -20,7 +21,7 @@ beforeEach(() => {
 afterEach(() => writeSpy.mockRestore());
 
 // What the extension sees: each frame's JSON, after the 4-byte length.
-function messages(): (BridgeEvent | BridgePart)[] {
+function messages(): (BridgeEvent | Part)[] {
   return frames.map((frame) => {
     expect(frame.readUInt32LE(0)).toBe(frame.length - 4);
     return JSON.parse(frame.subarray(4).toString("utf8"));
@@ -29,7 +30,7 @@ function messages(): (BridgeEvent | BridgePart)[] {
 
 function received(): BridgeEvent[] {
   const events: BridgeEvent[] = [];
-  const listen = joinParts((event) => events.push(event));
+  const listen = joinParts<BridgeEvent>((event) => events.push(event));
   for (const message of messages()) listen(message);
   return events;
 }

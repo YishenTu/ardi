@@ -5,7 +5,7 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 
-import type { ModelInfo, ModelState, PiCommand, ThinkingLevel } from "../chat";
+import type { ImageAttachment, ModelInfo, ModelState, PiCommand, ThinkingLevel } from "../chat";
 import { readPiHistory } from "./history/piHistory";
 import { buildPiLaunchSpec, prepareWorkDir, type PiTarget } from "./launch";
 import { toModelInfo } from "./models";
@@ -52,11 +52,11 @@ export class PiSession {
     this.ready = this.ready.then(() => this.switchTo(sessionFile)).catch((error: unknown) => this.fail(error));
   }
 
-  async prompt(text: string, promptId?: string): Promise<void> {
+  async prompt(text: string, { promptId, images }: { promptId?: string; images?: ImageAttachment[] } = {}): Promise<void> {
     await this.ready;
     // Only a newly started run restores browser permission. Rejected, queued
     // or handled input must not unlock browser calls from an earlier run.
-    const accepted = await this.transport?.request<{ disposition: string }>("prompt", { message: text }).catch((error: unknown) => { this.notice(error); return undefined; });
+    const accepted = await this.transport?.request<{ disposition: string }>("prompt", { message: text, images: images?.map((image) => ({ type: "image", ...image })) }).catch((error: unknown) => { this.notice(error); return undefined; });
     if (promptId) this.emit({ type: "prompt_result", promptId, started: accepted?.disposition === "started" });
   }
 

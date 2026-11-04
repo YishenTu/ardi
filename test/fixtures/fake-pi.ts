@@ -73,7 +73,7 @@ function handle(command: Record<string, any>): unknown {
     case "prompt":
       if (command.message === "handled:command") return { disposition: "handled" };
       // Answers once the prompt is accepted; the run streams as events.
-      queueMicrotask(() => void run(command.message));
+      queueMicrotask(() => void run(command.message, command.images));
       return { disposition: "started" };
     default:
       return {};
@@ -82,7 +82,7 @@ function handle(command: Record<string, any>): unknown {
 
 // Echoes the prompt back as the reply, with pi's full event sequence for a
 // one-turn run.
-async function run(text: string) {
+async function run(text: string, images?: Record<string, unknown>[]) {
   if (text === "browser:list") {
     const response = await fetch(process.env.ARDI_BROWSER_URL!, {
       method: "POST", headers: { Authorization: `Bearer ${process.env.ARDI_BROWSER_TOKEN}`, "Content-Type": "application/json" },
@@ -92,7 +92,7 @@ async function run(text: string) {
     text = JSON.stringify(reply.result);
   }
   const reply = `echo: ${text}`;
-  const user = { role: "user", content: text, timestamp: Date.now() };
+  const user = { role: "user", content: images ? [{ type: "text", text }, ...images] : text, timestamp: Date.now() };
   save(user);
   send({ type: "agent_start" });
   send({ type: "turn_start" });

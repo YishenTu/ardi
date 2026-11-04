@@ -1,7 +1,7 @@
 # AGENTS.md
 
 - Each target's `bridge/main.ts` is bundled with this code into `dist/<target>/bridge/main.js`, which runs on Node (`~/.ardi/runtime/<target>/launch.sh`, or `launch.cmd` on Windows), not Bun: end users have Pi's Node but not Bun. Use only Node APIs here, never `Bun.*`.
-- Stdout is the native messaging channel (4-byte length + JSON). Log only to stderr. Send events only through `sendToExtension`: Chrome drops messages over 1 MB, so it splits big ones into `part`s.
+- Stdout is the native messaging channel (4-byte length + JSON). Log only to stderr. Send events only through `sendToExtension`: Chrome drops messages over 1 MB, so it splits big ones into `part`s. Requests from the extension can arrive in parts too; `host.ts` joins them with `joinParts` (`src/parts.ts`).
 - pi's RPC output and session files are JSONL split on LF only. Don't use Node `readline`: it also splits on U+2028/U+2029, which are valid inside JSON strings.
 - Before any input reaches pi, prove it is on the requested session file (`get_state`), both at launch (`--session`) and after `open` (`switch_session`/`new_session`). pi exits on `--session` for a file it never saved, so resume only files that exist.
 - pi is isolated from the user's own pi setup: global extensions, skills and prompt templates are off, and the tool list is explicit. AGENTS.md files load as pi does by default, which is how `~/.ardi/AGENTS.md` reaches it. The only skills pi loads are in `~/.ardi/.agents/skills/` (`--no-skills` plus `--skill`). It gets every built-in tool plus Ardi's browser tools by design; don't narrow it without asking. On Windows the shell tool is `powershell` instead of `bash`, so Git Bash isn't required. For the prompt flag, see `src/agent/AGENTS.md`.

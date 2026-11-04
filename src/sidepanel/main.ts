@@ -1,7 +1,9 @@
 import type { LiveItem, PiStatus, SessionMeta } from "../shared";
+import { Attachments } from "./Attachments";
 import { ChatView } from "./ChatView";
 import { Composer } from "./Composer";
 import { el } from "./dom";
+import { closeLightbox } from "./lightbox";
 import { ModelPicker } from "./ModelPicker";
 import { PiClient } from "./pi";
 import { SettingsView } from "./SettingsView";
@@ -12,6 +14,7 @@ const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getEleme
 
 const form = $<HTMLFormElement>("composer");
 const input = new Composer($("input"));
+const attachments = new Attachments($("attachments"), $("input"));
 const statusDot = $("status");
 const statusText = $("status-text");
 const titleEl = $("title");
@@ -38,7 +41,7 @@ function setStatus(s: PiStatus) {
 }
 
 function applyLive(item: LiveItem) {
-  if (item.kind === "prompt") return view.addUser(item.text, item.at);
+  if (item.kind === "prompt") return view.addUser(item.text, item.at, item.images);
   if (item.chunk.type === "run_start") busy = true;
   if (item.chunk.type === "run_end") busy = false;
   view.applyChunk(item.chunk);
@@ -109,9 +112,10 @@ const pi = new PiClient({
 
 function send(text: string) {
   text = text.trim();
-  if (!text) return;
-  pi.send({ kind: "prompt", text }); // echoed back as a live item, which renders it
   input.value = "";
+  // Echoed back as a live item, which renders it. Goes once its images are
+  // read, still ahead of anything sent after it.
+  pi.send(attachments.take().then((images) => (text || images.length ? { kind: "prompt", text, images: images.length ? images : undefined } : null)));
 }
 
 // A different nudge each time the chat changes.
@@ -256,6 +260,7 @@ input.el.addEventListener("input", () => {
 // The caret can leave an @word without typing (arrows, clicks).
 document.addEventListener("selectionchange", () => void tabMenu.update());
 document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && closeLightbox()) return;
   // An open menu takes Esc first (it closes itself).
   if (e.key === "Escape" && busy && !settings.isOpen && !document.querySelector(":popover-open")) pi.send({ kind: "abort" });
 });
