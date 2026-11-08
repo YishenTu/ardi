@@ -1,6 +1,6 @@
 import type { BridgeEvent, PiCheck } from "../bridge/protocol";
 import { joinParts, postInParts } from "../parts";
-import type { Settings } from "../shared";
+import type { Settings } from "../panel-protocol";
 import { target } from "./target";
 
 // Ardi's settings, in chrome.storage.local. Owned here: the side panel asks

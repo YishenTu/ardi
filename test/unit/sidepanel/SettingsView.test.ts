@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, test } from "bun:test";
 import { chromeFake } from "../../support/chrome";
 import { $, loadPanel } from "../../support/panel";
 import { waitFor } from "../../support/wait";
-import type { SettingsRequest } from "../../../src/shared";
+import type { SettingsRequest } from "../../../src/panel-protocol";
 import { SettingsView } from "../../../src/sidepanel/SettingsView";
 
 // The background's answers. `pending` holds get_settings until released.

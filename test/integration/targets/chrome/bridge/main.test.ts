@@ -42,7 +42,7 @@ function startBridge(): BridgeEvent[] {
 
 test("Pi browser requests travel over native messaging and receive the extension's result", async () => {
   const events = startBridge();
-  bridge.stdin.write(frame({ type: "start", piPath: FAKE_PI }));
+  bridge.stdin.write(frame({ type: "start", piPath: FAKE_PI, epoch: 1 }));
   await waitFor(() => expect(events.map(e => e.type)).toContain("ready"));
   bridge.stdin.write(frame({ type: "prompt", text: "browser:list" }));
   await waitFor(() => expect(events.some(e => e.type === "browser_request")).toBe(true));
@@ -50,5 +50,5 @@ test("Pi browser requests travel over native messaging and receive the extension
   if (request.type !== "browser_request") throw new Error("Missing browser request");
   expect(request.request).toEqual({ op: "list" });
   bridge.stdin.write(frame({ type: "browser_reply", id: request.id, result: [{ id: "123", title: "User's existing tab" }] }));
-  await waitFor(() => expect(events).toContainEqual({ type: "chunk", chunk: { type: "text", content: 'echo: [{"id":"123","title":"User\'s existing tab"}]' } }));
+  await waitFor(() => expect(events).toContainEqual({ type: "chunk", chunk: { type: "text", content: 'echo: [{"id":"123","title":"User\'s existing tab"}]' }, epoch: 1 }));
 });

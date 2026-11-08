@@ -64,3 +64,11 @@ test("a removed image doesn't go with the message", async () => {
   expect(thumbs()).toHaveLength(1);
   expect(await attachments.take()).toHaveLength(1);
 });
+
+test("images handed back to the message box go before those already there, like their text", async () => {
+  fire($("input"), "paste", "clipboardData", [png()]);
+  await waitFor(() => expect(thumbs()).toHaveLength(1));
+  attachments.restore([{ data: "QQ==", mimeType: "image/png" }]);
+  expect(thumbs()[0].src).toBe("data:image/png;base64,QQ==");
+  expect(await attachments.take()).toEqual([{ data: "QQ==", mimeType: "image/png" }, { data: "aGk=", mimeType: "image/png" }]);
+});

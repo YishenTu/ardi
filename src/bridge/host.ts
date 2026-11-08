@@ -40,13 +40,15 @@ export async function runBridge(target: BridgeTarget): Promise<void> {
         case "browser_reply":
           return relay?.reply(request);
         case "start":
-          return session.start(request.sessionFile, request.piPath);
+          return session.start(request.sessionFile, request.epoch, request.piPath);
         case "check_pi":
           return void checkPi(request.piPath).then((check) => sendToExtension({ type: "pi_check", ...check }));
         case "open":
-          return session.open(request.sessionFile);
+          return session.open(request.sessionFile, request.epoch);
         case "prompt":
-          return void session.prompt(request.text, { promptId: request.promptId, images: request.images });
+          return void session.prompt(request.text, { promptId: request.promptId, images: request.images, steer: request.steer });
+        case "queue_action":
+          return void session.queueAction(request);
         case "abort":
           return void session.abort();
         case "compact":

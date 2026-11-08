@@ -1,5 +1,5 @@
 import { joinParts } from "../parts";
-import { PANEL_PORT, type PanelRequest, type SettingsAnswers, type SettingsRequest } from "../shared";
+import { PANEL_PORT, type PanelRequest, type SettingsAnswers, type SettingsRequest } from "../panel-protocol";
 import * as pi from "./pi-session";
 import * as settings from "./settings";
 import { setTarget, type BackgroundTarget } from "./target";
@@ -32,7 +32,9 @@ export function startBackground(target: BackgroundTarget): void {
 function handle(req: PanelRequest) {
   switch (req.kind) {
     case "prompt":
-      return pi.prompt(req.text, req.images);
+      return pi.prompt(req.text, req.images, req.steer);
+    case "queue_action":
+      return pi.queueAction(req);
     case "abort":
       return pi.abort();
     case "restart":

@@ -50,23 +50,38 @@ export class Attachments {
   }
 
   add(files: File[]) {
-    for (const file of files) {
-      const tile = el("div", "attachment");
-      const img = tile.appendChild(el("img"));
-      img.alt = "";
-      const remove = tile.appendChild(el("button", "attachment-remove"));
-      remove.type = "button";
-      remove.title = "Remove";
-      remove.setAttribute("aria-label", "Remove image");
-      remove.innerHTML = REMOVE_ICON;
-      const item: Item = { image: read(file), tile };
-      remove.addEventListener("click", () => this.remove(item));
-      // An image that can't be read just leaves the tray.
-      item.image.then((image) => (img.src = imageUrl(image)), () => this.remove(item));
+    for (const file of files) this.addItem(read(file));
+  }
+
+  // Images handed back to the message box with their message, which goes
+  // before what's there: so do they.
+  restore(images: ImageAttachment[]) {
+    for (const image of images.toReversed()) this.addItem(Promise.resolve(image), image, true);
+  }
+
+  // `ready`: the image, if already read, so its thumbnail shows at once.
+  private addItem(image: Promise<ImageAttachment>, ready?: ImageAttachment, first = false) {
+    const tile = el("div", "attachment");
+    const img = tile.appendChild(el("img"));
+    img.alt = "";
+    const remove = tile.appendChild(el("button", "attachment-remove"));
+    remove.type = "button";
+    remove.title = "Remove";
+    remove.setAttribute("aria-label", "Remove image");
+    remove.innerHTML = REMOVE_ICON;
+    const item: Item = { image, tile };
+    remove.addEventListener("click", () => this.remove(item));
+    if (ready) img.src = imageUrl(ready);
+    // An image that can't be read just leaves the tray.
+    else item.image.then((read) => (img.src = imageUrl(read)), () => this.remove(item));
+    if (first) {
+      this.items.unshift(item);
+      this.tray.prepend(tile);
+    } else {
       this.items.push(item);
       this.tray.append(tile);
     }
-    this.tray.hidden = !this.items.length;
+    this.tray.hidden = false;
   }
 
   // Empties the tray at once and returns its images for the message being

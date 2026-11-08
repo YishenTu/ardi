@@ -8,6 +8,17 @@
 // was asked to open. FAKE_PI_IGNORE_EOF=1 makes it keep running after its
 // stdin closes, like a pi stuck in a tool call. FAKE_PI_STALL=1 makes it
 // never answer, like a pi still starting up.
+//
+// A run for the prompt "hold" waits after its reply until a steering
+// message arrives or it is aborted; "hold-till-clear" waits until the queue
+// is cleared or it is aborted. Messages sent meanwhile queue like pi's (steering, then
+// follow-ups once the run would stop); like pi, it takes one by dropping it
+// from the queue (queue_update) and then starting it as a user message, and
+// an abort still delivers what is left in the queue. Races pi can produce:
+// a queued "eager:" message is taken before pi answers, and a "slip:" one is
+// taken just before a clear_queue. Like pi, it expands "/skill:demo X" to
+// "expanded demo: X", and an image-only message it takes stays listed in its
+// queue (pi drops taken messages by text).
 
 import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -38,6 +49,20 @@ let lastId: string | null = null;
 let model = { provider: "fake", id: "m1" };
 let thinkingLevel = "medium";
 
+type Queued = { text: string; images?: Record<string, unknown>[] };
+let running = false;
+let aborted = false;
+let steering: Queued[] = [];
+let followUp: Queued[] = [];
+// Wakes a held run.
+let wake: (() => void) | null = null;
+let holding = "";
+// Image-only messages taken but still listed, per queue.
+let staleSteering = 0;
+let staleFollowUp = 0;
+
+const expand = (text: string) => text.replace(/^\/skill:demo (.*)$/s, "expanded demo: $1");
+
 const send = (record: unknown) => process.stdout.write(`${JSON.stringify(record)}\n`);
 
 function save(message: Record<string, unknown>) {
@@ -48,6 +73,7 @@ function save(message: Record<string, unknown>) {
 }
 
 function handle(command: Record<string, any>): unknown {
+  if (typeof command.message === "string") command.message = expand(command.message);
   switch (command.type) {
     case "get_available_models":
       return { models: [{ provider: "fake", id: "m1", name: "Model One", reasoning: true }, { provider: "fake", id: "m2", reasoning: false }] };
@@ -72,17 +98,98 @@ function handle(command: Record<string, any>): unknown {
       return {};
     case "prompt":
       if (command.message === "handled:command") return { disposition: "handled" };
+      if (running) {
+        if (!command.streamingBehavior) throw new Error("Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.");
+        const queued = enqueue(command.streamingBehavior === "steer", command);
+        if (command.message.startsWith("eager:")) take(command.message);
+        return queued;
+      }
       // Answers once the prompt is accepted; the run streams as events.
       queueMicrotask(() => void run(command.message, command.images));
       return { disposition: "started" };
+    case "steer":
+    case "follow_up":
+      return enqueue(command.type === "steer", command);
+    case "clear_queue": {
+      const slip = [...steering, ...followUp].find((q) => q.text.startsWith("slip:"));
+      if (slip) take(slip.text);
+      const cleared = listed();
+      steering = [];
+      followUp = [];
+      staleSteering = 0;
+      staleFollowUp = 0;
+      queueUpdate();
+      if (holding === "hold-till-clear") wake?.();
+      return cleared;
+    }
+    case "abort":
+      if (running) aborted = true;
+      wake?.();
+      return {};
     default:
       return {};
   }
 }
 
-// Echoes the prompt back as the reply, with pi's full event sequence for a
-// one-turn run.
+function enqueue(steer: boolean, command: Record<string, any>) {
+  (steer ? steering : followUp).push({ text: command.message, images: command.images });
+  queueUpdate();
+  if (steer && holding === "hold") wake?.();
+  return { disposition: "queued" };
+}
+
+// Delivers a queued message now, mid-run.
+function take(text: string) {
+  const message = [...steering, ...followUp].find((q) => q.text === text)!;
+  void turn(message.text, message.images, message);
+}
+
+// Like pi, drops a message it takes from the queue just before starting it
+// (the first with its text).
+function dequeue(message: Queued) {
+  if (!message.text) {
+    if (steering.includes(message)) staleSteering++;
+    else staleFollowUp++;
+  }
+  steering = steering.filter((q) => q !== message);
+  followUp = followUp.filter((q) => q !== message);
+  queueUpdate();
+}
+
+function listed() {
+  const empty = (n: number) => Array<string>(n).fill("");
+  return { steering: [...empty(staleSteering), ...steering.map((q) => q.text)], followUp: [...empty(staleFollowUp), ...followUp.map((q) => q.text)] };
+}
+
+function queueUpdate() {
+  send({ type: "queue_update", ...listed() });
+}
+
+// A run: one turn for the prompt, then one per queued message.
 async function run(text: string, images?: Record<string, unknown>[]) {
+  running = true;
+  aborted = false;
+  send({ type: "agent_start" });
+  let next: Queued | undefined = { text, images };
+  let queued: Queued | undefined;
+  while (next) {
+    await turn(next.text, next.images, queued);
+    if (next.text.startsWith("hold") && !aborted && !steering.length) {
+      holding = next.text;
+      await new Promise<void>((resolve) => (wake = resolve));
+    }
+    wake = null;
+    holding = "";
+    next = steering[0] ?? followUp[0];
+    queued = next;
+  }
+  running = false;
+  send({ type: "agent_settled", aborted });
+}
+
+// Echoes the message back as the reply, with pi's event sequence for a turn.
+// `queued`: the message pi takes from its queue.
+async function turn(text: string, images?: Record<string, unknown>[], queued?: Queued) {
   if (text === "browser:list") {
     const response = await fetch(process.env.ARDI_BROWSER_URL!, {
       method: "POST", headers: { Authorization: `Bearer ${process.env.ARDI_BROWSER_TOKEN}`, "Content-Type": "application/json" },
@@ -94,8 +201,8 @@ async function run(text: string, images?: Record<string, unknown>[]) {
   const reply = `echo: ${text}`;
   const user = { role: "user", content: images ? [{ type: "text", text }, ...images] : text, timestamp: Date.now() };
   save(user);
-  send({ type: "agent_start" });
   send({ type: "turn_start" });
+  if (queued) dequeue(queued);
   send({ type: "message_start", message: user });
   send({ type: "message_end", message: user });
   send({ type: "message_start", message: { role: "assistant", content: [], stopReason: "pending" } });
@@ -105,7 +212,6 @@ async function run(text: string, images?: Record<string, unknown>[]) {
   send({ type: "message_end", message });
   send({ type: "turn_end", message, toolResults: [] });
   send({ type: "agent_end", messages: [user, message], willRetry: false });
-  send({ type: "agent_settled" });
 }
 
 let buffer = "";
@@ -116,9 +222,12 @@ process.stdin.on("data", (chunk: string) => {
     const command = JSON.parse(buffer.slice(0, end));
     buffer = buffer.slice(end + 1);
     if (process.env.FAKE_PI_STALL) continue;
-    if (command.type === "prompt" && command.message === "reject:busy") {
-      send({ type: "response", id: command.id, command: command.type, success: false, error: "Agent is already streaming. Specify streamingBehavior to queue a message." });
-    } else send({ type: "response", id: command.id, command: command.type, success: true, data: handle(command) });
+    try {
+      if (command.type === "prompt" && command.message === "reject:busy") throw new Error("Agent is already streaming. Specify streamingBehavior to queue a message.");
+      send({ type: "response", id: command.id, command: command.type, success: true, data: handle(command) });
+    } catch (error) {
+      send({ type: "response", id: command.id, command: command.type, success: false, error: (error as Error).message });
+    }
   }
 });
 process.stdin.on("end", () => {
