@@ -43,7 +43,7 @@ test("both distributions build and install without overwriting each other", asyn
       expect(existsSync(join(out, "bridge/main.js"))).toBe(true);
       const agent = readFileSync(join(out, "agent/extension/index.js"), "utf8");
       expect(agent).not.toContain("ARDI_BROWSER_URL) return");
-      expect(existsSync(join(out, "agent/references", target === "chrome" ? "ardia.md" : "chrome.md"))).toBe(false);
+      expect(existsSync(join(out, "agent/references", target === "chrome" ? "ardia-app.md" : "chrome.md"))).toBe(false);
       await run(["scripts/install-host.ts", target], env);
       const hostName = target === "chrome" ? "com.ardi.chrome.pi" : "com.ardi.pi";
       const host = readHostManifest(homeEnv, hostName);
@@ -85,7 +85,7 @@ test("both distributions build and install without overwriting each other", asyn
         expect(registered.map(t => t.name)).toContain(target === "chrome" ? "browser_exec" : "ardia_exec");
         expect(enabled).not.toContain(target === "chrome" ? "ardia_exec" : "browser_exec");
         // The path as pi loads the extension (Windows may spell `out` in 8.3 form).
-        const reference = join(extension, "..", "references", target === "chrome" ? "chrome.md" : "ardia.md");
+        const reference = join(extension, "..", "references", target === "chrome" ? "chrome.md" : "ardia-app.md");
         // Every reference a tool description points pi at ships with the build.
         const references = join(extension, "..", "references");
         // Split on the directory itself: the path may contain spaces.
