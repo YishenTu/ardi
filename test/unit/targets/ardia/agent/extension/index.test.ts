@@ -76,6 +76,9 @@ if (argv[0] === "windows") {
 }
 `;
 
+// Ardia runs on macOS and Linux only; the build skips the target on Windows.
+const ardiaTest = test.skipIf(process.platform === "win32");
+
 type Tool = { name: string; execute: (id: string, params: object, signal?: AbortSignal, onUpdate?: unknown, ctx?: unknown) => Promise<{ content: { type: string; text?: string }[]; details?: unknown }> };
 
 const path = process.env.PATH;
@@ -96,7 +99,7 @@ afterEach(() => { process.env.PATH = path; delete process.env.FAKE_ARDIA_BUSY; }
 
 const textOf = (result: Awaited<ReturnType<Tool["execute"]>>) => result.content.map((c) => c.text).join("");
 
-test("list_tabs lists the user's tabs and marks the one they're looking at in the focused window", async () => {
+ardiaTest("list_tabs lists the user's tabs and marks the one they're looking at in the focused window", async () => {
   const result = await tools.list_tabs.execute("1", {});
   expect(result.details).toEqual([
     { id: "t1", title: "Page A", url: "https://a.test/", current: false },
@@ -105,7 +108,7 @@ test("list_tabs lists the user's tabs and marks the one they're looking at in th
   expect(textOf(result)).toContain("* t2  Page B");
 });
 
-test("read_tab reads the user's current tab by default, a mentioned tab by URL, with the title and URL first", async () => {
+ardiaTest("read_tab reads the user's current tab by default, a mentioned tab by URL, with the title and URL first", async () => {
   expect(textOf(await tools.read_tab.execute("1", {}))).toBe("Page B\nhttps://b.test/\n\nText of the page");
   const byUrl = await tools.read_tab.execute("2", { url: "https://a.test/" });
   expect(textOf(byUrl)).toStartWith("Page A\nhttps://a.test/\n\n");
@@ -114,18 +117,18 @@ test("read_tab reads the user's current tab by default, a mentioned tab by URL, 
 
 // The read-only tools switch tabs in a session of their own; a tab they read
 // must stay one the agent can close.
-test("a tab the agent read can still be closed by the agent", async () => {
+ardiaTest("a tab the agent read can still be closed by the agent", async () => {
   await tools.read_tab.execute("1", { id: "t1" });
   expect(textOf(await tools.ardia_exec.execute("2", { code: "tab close t1" }))).toBe("✓ Closed t1");
 });
 
-test("a read that fails still leaves the tab one the agent can close", async () => {
+ardiaTest("a read that fails still leaves the tab one the agent can close", async () => {
   await expect(tools.read_tab.execute("1", { id: "t3" })).rejects.toThrow("Page crashed");
   expect(textOf(await tools.ardia_exec.execute("2", { code: "tab close t3" }))).toBe("✓ Closed t3");
 });
 
 // A Pi session is one chat. A chat must not act on, or close, the tabs another chat opened.
-test("each chat drives the browser in its own session", async () => {
+ardiaTest("each chat drives the browser in its own session", async () => {
   await tools.ardia_exec.execute("1", { code: "snapshot -i" }, undefined, undefined, chat("chat-a"));
   await tools.ardia_exec.execute("2", { code: "snapshot -i" }, undefined, undefined, chat("chat-a"));
   await tools.ardia_exec.execute("3", { code: "snapshot -i" }, undefined, undefined, chat("chat-b"));
@@ -134,14 +137,14 @@ test("each chat drives the browser in its own session", async () => {
   expect(b).not.toBe(a1);
 });
 
-test("an error from the CLI itself reaches the agent as it is", async () => {
+ardiaTest("an error from the CLI itself reaches the agent as it is", async () => {
   process.env.FAKE_ARDIA_BUSY = "1";
   await expect(tools.read_tab.execute("1", {})).rejects.toThrow("session_busy: another command is running");
 });
 
 // Pi runs the tools in its own process: a CLI that stops reading its input
 // (it failed early, or the call was cancelled) must not take Pi down.
-test("a CLI that exits before reading a long script doesn't crash Pi", async () => {
+ardiaTest("a CLI that exits before reading a long script doesn't crash Pi", async () => {
   const crashes: unknown[] = [];
   const crashed = (error: unknown) => crashes.push(error);
   process.on("uncaughtException", crashed);
@@ -154,7 +157,7 @@ test("a CLI that exits before reading a long script doesn't crash Pi", async () 
   expect(crashes).toEqual([]);
 });
 
-test("ardia_exec runs its commands in the browser and reports a failed one as an error", async () => {
+ardiaTest("ardia_exec runs its commands in the browser and reports a failed one as an error", async () => {
   expect(textOf(await tools.ardia_exec.execute("1", { code: "snapshot -i\nclick @e3" }))).toBe("✓ snapshot -i\n✓ click @e3");
   await expect(tools.ardia_exec.execute("2", { code: "click @e404" })).rejects.toThrow("Element not found");
 });
