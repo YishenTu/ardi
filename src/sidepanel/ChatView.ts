@@ -22,15 +22,14 @@ function markdown(text: string): string {
 // Renders the conversation: history messages from pi's session file, then
 // live chunks. A run renders as one assistant message, like history does.
 export class ChatView {
-  // The assistant message of the current run, if one is streaming.
-  private current: HTMLElement | null = null;
+  // The streaming run, null between runs: its reply message (the latest
+  // part, if a user message split it), the "Working…" line at the bottom of
+  // that message and its clock, when the run started and the output tokens
+  // reported so far.
+  private run: { msg: HTMLElement; working: HTMLElement; timer: number; start: number; tokens: number } | null = null;
   // Text or thinking block the next delta of the same kind appends to.
   private tail: { type: "text" | "thinking"; el: HTMLElement; raw: string } | null = null;
   private readonly tools = new Map<string, { card: HTMLElement; call: ToolState }>();
-  // The "Working…" line at the bottom of the running reply, and its clock.
-  private working: { el: HTMLElement; timer: number } | null = null;
-  // The running run's start and the output tokens reported so far.
-  private run: { start: number; tokens: number } | null = null;
 
   constructor(
     private readonly root: HTMLElement,
@@ -40,10 +39,9 @@ export class ChatView {
   // `loading`: a saved chat whose messages are on their way, so the empty
   // state stays hidden instead of flashing before them.
   clear(loading = false) {
-    this.stopWorking();
+    this.endRun();
     this.root.replaceChildren(this.empty);
     this.empty.hidden = loading;
-    this.current = null;
     this.tail = null;
     this.tools.clear();
   }
@@ -56,7 +54,11 @@ export class ChatView {
     }
   }
 
+  // During a run (pi took a queued message), the reply splits around it and
+  // carries on below.
   addUser(text: string, at: number, images: ImageAttachment[] = []) {
+    const { run } = this;
+    if (run) this.endTail();
     const entry = this.append(el("div", "entry user"));
     if (images.length) {
       const row = entry.appendChild(el("div", "msg-attachments"));
@@ -69,11 +71,17 @@ export class ChatView {
         tile.addEventListener("click", () => openLightbox(img.src));
       }
     }
-    if (text) {
+    // An image-only message reaches pi with a space for text.
+    if (text.trim()) {
       const msg = entry.appendChild(el("div", "msg user"));
       for (const part of splitMentions(text)) msg.append(typeof part === "string" ? part : mentionLink(part));
     }
     entry.append(footer({ copy: () => text, at }));
+    if (!run) return;
+    const before = run.msg;
+    run.msg = this.append(el("div", "msg assistant"));
+    run.msg.append(run.working);
+    if (!before.childElementCount) before.remove();
   }
 
   addNotice(text: string, level: NoticeLevel) {
@@ -83,25 +91,19 @@ export class ChatView {
   applyChunk(chunk: ChatChunk) {
     switch (chunk.type) {
       case "run_start":
-        this.current = this.append(el("div", "msg assistant"));
         this.endTail();
-        this.startWorking(this.current, chunk.at);
-        this.run = { start: chunk.at, tokens: 0 };
+        this.startRun(chunk.at);
         break;
       case "usage":
         if (this.run) this.run.tokens += chunk.outputTokens;
         break;
       case "run_end": {
         this.endTail();
-        this.stopWorking();
-        const msg = this.current;
-        const run = this.run;
-        this.current = null;
-        this.run = null;
-        if (!msg) break;
+        const run = this.endRun();
+        if (!run) break;
         // A stopped run keeps its message, even empty, for the indicator.
-        if (!msg.childElementCount && !chunk.interrupted) msg.remove();
-        else if (run) finishRun(msg, { completedAt: chunk.at, durationMs: chunk.at - run.start, outputTokens: run.tokens, interrupted: chunk.interrupted });
+        if (!run.msg.childElementCount && !chunk.interrupted) run.msg.remove();
+        else finishRun(run.msg, { completedAt: chunk.at, durationMs: chunk.at - run.start, outputTokens: run.tokens, interrupted: chunk.interrupted });
         break;
       }
       case "text":
@@ -126,6 +128,9 @@ export class ChatView {
       case "notice":
         this.addNotice(chunk.content, chunk.level);
         break;
+      case "user":
+        this.addUser(chunk.text, chunk.at, chunk.images);
+        break;
     }
   }
 
@@ -145,28 +150,32 @@ export class ChatView {
     if (msg.childElementCount || message.interrupted) finishRun(msg, message);
   }
 
-  private startWorking(msg: HTMLElement, startedAt: number) {
-    this.stopWorking();
-    const line = msg.appendChild(el("div", "working"));
+  private startRun(start: number) {
+    this.endRun();
+    const msg = this.append(el("div", "msg assistant"));
+    const working = msg.appendChild(el("div", "working"));
     const hint = el("span", "working-hint");
-    line.append(el("span", "working-label", "Working…"), hint);
-    const tick = () => (hint.textContent = ` (esc to interrupt · ${formatDuration(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)))})`);
+    working.append(el("span", "working-label", "Working…"), hint);
+    const tick = () => (hint.textContent = ` (esc to interrupt · ${formatDuration(Math.max(0, Math.floor((Date.now() - start) / 1000)))})`);
     tick();
-    this.working = { el: line, timer: window.setInterval(tick, 1000) };
+    this.run = { msg, working, timer: window.setInterval(tick, 1000), start, tokens: 0 };
   }
 
-  private stopWorking() {
-    if (!this.working) return;
-    clearInterval(this.working.timer);
-    this.working.el.remove();
-    this.working = null;
+  // Stops the clock and removes the Working line; returns the run that ended.
+  private endRun() {
+    const { run } = this;
+    if (!run) return null;
+    clearInterval(run.timer);
+    run.working.remove();
+    this.run = null;
+    return run;
   }
 
-  // Adds a block to the running reply, above the "Working…" line.
+  // Adds a block to the running reply, above the "Working…" line. pi sends
+  // reply content only during a run; anything else gets its own message.
   private add(node: HTMLElement): HTMLElement {
-    const msg = this.ensureCurrent();
-    const working = this.working?.el.parentElement === msg ? this.working.el : null;
-    msg.insertBefore(node, working);
+    if (this.run) this.run.msg.insertBefore(node, this.run.working);
+    else this.append(el("div", "msg assistant")).append(node);
     this.scroll();
     return node;
   }
@@ -205,11 +214,6 @@ export class ChatView {
     tool.call = change(tool.call);
     updateToolCard(tool.card, tool.call);
     this.scroll();
-  }
-
-  private ensureCurrent(): HTMLElement {
-    this.current ??= this.append(el("div", "msg assistant"));
-    return this.current;
   }
 
   private append(node: HTMLElement): HTMLElement {

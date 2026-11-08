@@ -5,7 +5,7 @@
 // Reads the event shapes in pi's docs (docs/json.md), not Claudian's
 // fallbacks for other spellings.
 
-import type { ChatChunk } from "../../chat";
+import type { ChatChunk, ImageAttachment } from "../../chat";
 import { extractPiToolResultText, extractPiToolTextContent, getRecord, getString, isPlainObject, normalizePiToolInput } from "./piToolNormalization";
 
 export interface PiEventNormalizationState {
@@ -38,7 +38,7 @@ export function normalizePiRPCEvent(event: Record<string, unknown>, state: PiEve
     case "tool_execution_end":
       return isNested(event) ? [] : normalizeToolResult(event, state);
     case "message_start":
-      return normalizeCustomMessage(event);
+      return [...normalizeUserMessage(event), ...normalizeCustomMessage(event)];
     // turn_end repeats the reply message_end already reported.
     case "message_end":
       return normalizeReplyEnd(event);
@@ -73,6 +73,27 @@ function normalizeReplyEnd(event: Record<string, unknown>): ChatChunk[] {
   if (typeof output === "number" && output > 0) chunks.push({ type: "usage", outputTokens: output });
   if (message.stopReason === "error") chunks.push({ type: "notice", content: getString(message.errorMessage) || "Pi turn failed.", level: "error" });
   return chunks;
+}
+
+// A user message's text and images (docs/message-types.md). The bridge
+// sends an image-only message with a space for text, as pi's queue drops a
+// taken message by its text.
+function normalizeUserMessage(event: Record<string, unknown>): ChatChunk[] {
+  const message = getRecord(event.message);
+  if (message?.role !== "user") return [];
+  const at = typeof message.timestamp === "number" ? message.timestamp : Date.now();
+  const { content } = message;
+  let text = typeof content === "string" ? content : "";
+  const images: ImageAttachment[] = [];
+  if (Array.isArray(content)) {
+    for (const part of content) {
+      if (!isPlainObject(part)) continue;
+      if (part.type === "text" && typeof part.text === "string") text += part.text;
+      if (part.type === "image" && typeof part.data === "string" && typeof part.mimeType === "string") images.push({ data: part.data, mimeType: part.mimeType });
+    }
+  }
+  if (!text.trim()) text = "";
+  return [images.length ? { type: "user", text, images, at } : { type: "user", text, at }];
 }
 
 /** Extension messages (`pi.sendMessage`) enter the conversation as role `custom`. */

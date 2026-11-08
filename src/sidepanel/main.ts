@@ -1,4 +1,5 @@
-import type { LiveItem, PiStatus, SessionMeta } from "../shared";
+import type { ChatChunk } from "../chat";
+import type { PiStatus, SessionMeta } from "../panel-protocol";
 import { Attachments } from "./Attachments";
 import { ChatView } from "./ChatView";
 import { Composer } from "./Composer";
@@ -6,6 +7,7 @@ import { el } from "./dom";
 import { closeLightbox } from "./lightbox";
 import { ModelPicker } from "./ModelPicker";
 import { PiClient } from "./pi";
+import { QueueView } from "./QueueView";
 import { SettingsView } from "./SettingsView";
 import { SlashMenu } from "./SlashMenu";
 import { TabMenu } from "./TabMenu";
@@ -40,11 +42,10 @@ function setStatus(s: PiStatus) {
   if (s === "disconnected") busy = false;
 }
 
-function applyLive(item: LiveItem) {
-  if (item.kind === "prompt") return view.addUser(item.text, item.at, item.images);
-  if (item.chunk.type === "run_start") busy = true;
-  if (item.chunk.type === "run_end") busy = false;
-  view.applyChunk(item.chunk);
+function applyLive(chunk: ChatChunk) {
+  if (chunk.type === "run_start") busy = true;
+  if (chunk.type === "run_end") busy = false;
+  view.applyChunk(chunk);
 }
 
 const dateFormat = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
@@ -106,16 +107,25 @@ const pi = new PiClient({
   model: (state) => picker.render(state),
   commands: (commands) => slash.setCommands(commands),
   live: applyLive,
+  queue: (queue) => queueView.render(queue),
+  // Back in the box (a stop, Edit, or rejected by pi), ahead of anything typed since.
+  restore(text, images) {
+    input.value = [text, input.value].filter(Boolean).join("\n\n");
+    if (images) attachments.restore(images);
+    input.focus();
+  },
   status: setStatus,
   sessions: renderSessions,
 });
 
-function send(text: string) {
+// `steer`: while pi works, it takes the message after its current step
+// rather than once it's done.
+function send(text: string, steer = false) {
   text = text.trim();
   input.value = "";
-  // Echoed back as a live item, which renders it. Goes once its images are
-  // read, still ahead of anything sent after it.
-  pi.send(attachments.take().then((images) => (text || images.length ? { kind: "prompt", text, images: images.length ? images : undefined } : null)));
+  // Shows in the chat once pi starts it (or in the queue while pi works).
+  // Goes once its images are read, still ahead of anything sent after it.
+  pi.send(attachments.take().then((images) => (text || images.length ? { kind: "prompt", text, images: images.length ? images : undefined, ...(steer && { steer }) } : null)));
 }
 
 // A different nudge each time the chat changes.
@@ -231,6 +241,8 @@ const slash = new SlashMenu(input, $("slash"), [
   { name: "compact", description: "Summarize this chat to free up context", run: () => pi.send({ kind: "compact" }) },
 ]);
 
+const queueView = new QueueView($("queue"), (action) => pi.send({ kind: "queue_action", ...action }));
+
 const tabMenu = new TabMenu(input, $("tab-menu"));
 
 const settings = new SettingsView($("settings"));
@@ -250,7 +262,7 @@ input.el.addEventListener("keydown", (e) => {
   if (slash.keydown(e) || tabMenu.keydown(e)) return;
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
     e.preventDefault();
-    send(input.value);
+    send(input.value, e.metaKey || e.ctrlKey);
   }
 });
 input.el.addEventListener("input", () => {

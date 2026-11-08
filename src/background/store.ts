@@ -1,4 +1,4 @@
-import type { SessionMeta } from "../shared";
+import type { SessionMeta } from "../panel-protocol";
 
 // IndexedDB storage for Ardi's chat list. Lives in the service worker.
 // Only metadata: the conversation itself is in pi's session file.

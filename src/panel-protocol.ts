@@ -1,7 +1,7 @@
 import type { PiCheck } from "./bridge/protocol";
 // So the panel gets it from here, not from the bridge.
 export type { PiCheck };
-import type { ChatChunk, ChatMessage, ImageAttachment, ModelState, PiCommand, ThinkingLevel } from "./chat";
+import type { ChatChunk, ChatMessage, ImageAttachment, ModelState, PiCommand, QueueAction, QueuedMessage, ThinkingLevel } from "./chat";
 
 // Port name the side panel uses to connect to the background.
 export const PANEL_PORT = "sidepanel";
@@ -19,13 +19,13 @@ export type SessionMeta = {
   updatedAt: number;
 };
 
-// What happened since pi started, on top of the history it reported:
-// prompts the user sent and chunks pi streamed back. In memory only.
-export type LiveItem = { kind: "prompt"; text: string; images?: ImageAttachment[]; at: number } | { kind: "chunk"; chunk: ChatChunk };
-
 // Side panel -> background, over the panel's port.
 export type PanelRequest =
-  | { kind: "prompt"; text: string; images?: ImageAttachment[] }
+  // `steer`: if pi is working, it takes this after the current step instead
+  // of once it's done.
+  | { kind: "prompt"; text: string; images?: ImageAttachment[]; steer?: boolean }
+  // An `edit` comes back as `restore`.
+  | ({ kind: "queue_action" } & QueueAction)
   | { kind: "abort" }
   | { kind: "compact" }
   | { kind: "restart" } // restart pi, same session
@@ -37,11 +37,16 @@ export type PanelRequest =
 
 // Background -> side panel, over the panel's port.
 export type PanelUpdate =
-  // `history` is null while a saved chat's history loads.
-  | { kind: "replay"; status: PiStatus; session: SessionMeta; history: ChatMessage[] | null; live: LiveItem[]; model: ModelState; commands: PiCommand[] }
+  // `history` is null while a saved chat's history loads. `live`: what pi
+  // sent since, on top of that history (in memory only).
+  | { kind: "replay"; status: PiStatus; session: SessionMeta; history: ChatMessage[] | null; live: ChatChunk[]; queue: QueuedMessage[]; model: ModelState; commands: PiCommand[] }
   | { kind: "model"; model: ModelState }
   | { kind: "status"; status: PiStatus }
-  | { kind: "live"; item: LiveItem }
+  | { kind: "live"; chunk: ChatChunk }
+  // Messages waiting for pi while it works.
+  | { kind: "queue"; queue: QueuedMessage[] }
+  // Messages taken back (a stop, an edit, rejected or never answered), for the message box.
+  | { kind: "restore"; text: string; images?: ImageAttachment[] }
   | { kind: "sessions"; sessions: SessionMeta[]; currentId: number };
 
 export type Settings = {

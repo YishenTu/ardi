@@ -35,6 +35,26 @@ describe("a live run", () => {
     expect(layout(reply())).toEqual(["md", "step tool", "working"]);
   });
 
+  test("a message pi takes mid-run splits the reply, with the Working line staying at the bottom", () => {
+    play({ type: "run_start", at: 1000 }, { type: "text", content: "Looking in the inbox" });
+    view.addUser("check promotions too", 2000);
+    play({ type: "text", content: "Found it" });
+    expect([...root.children].slice(-3).map((child) => child.className)).toEqual(["msg assistant", "entry user", "msg assistant"]);
+    const [before, after] = root.querySelectorAll<HTMLElement>(".msg.assistant");
+    expect(layout(before)).toEqual(["md"]);
+    expect(layout(after)).toEqual(["md", "working"]);
+
+    play({ type: "run_end", at: 5000 });
+    expect(after.querySelector(".msg-footer")).not.toBeNull();
+  });
+
+  test("a message pi takes before the reply has anything leaves no empty reply behind", () => {
+    play({ type: "run_start", at: 1000 });
+    view.addUser("actually, stop", 2000);
+    expect([...root.children].slice(-2).map((child) => child.className)).toEqual(["entry user", "msg assistant"]);
+    expect(layout(reply())).toEqual(["working"]);
+  });
+
   test("consecutive thinking deltas join into one block", () => {
     play({ type: "run_start", at: 0 }, { type: "thinking", content: "Let me " }, { type: "thinking", content: "think." });
     expect(reply().querySelectorAll(".thinking")).toHaveLength(1);

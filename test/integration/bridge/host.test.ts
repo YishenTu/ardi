@@ -45,7 +45,7 @@ function startBridge(): BridgeEvent[] {
 
 test("reads framed requests however stdin splits them, answers in frames, and stops when the browser disconnects", async () => {
   const events = startBridge();
-  const start = frame({ type: "start", piPath: FAKE_PI });
+  const start = frame({ type: "start", piPath: FAKE_PI, epoch: 1 });
   // One message split across writes.
   bridge.stdin.write(start.subarray(0, 3));
   bridge.stdin.write(start.subarray(3));
@@ -54,7 +54,7 @@ test("reads framed requests however stdin splits them, answers in frames, and st
   // Two messages in one write.
   bridge.stdin.write(Buffer.concat([frame({ type: "check_pi", piPath: FAKE_PI }), frame({ type: "prompt", text: "hi" })]));
   await waitFor(() => expect(events).toContainEqual({ type: "pi_check", command: FAKE_PI, version: "0.0.0-fake" }), 10_000);
-  await waitFor(() => expect(events).toContainEqual({ type: "chunk", chunk: { type: "text", content: "echo: hi" } }), 10_000);
+  await waitFor(() => expect(events).toContainEqual({ type: "chunk", chunk: { type: "text", content: "echo: hi" }, epoch: 1 }), 10_000);
 
   const exited = new Promise<number | null>((done) => bridge.on("exit", done));
   bridge.stdin.end();
@@ -67,7 +67,7 @@ test("a pi that doesn't exit when the browser disconnects is killed", async () =
   process.env.FAKE_PI_IGNORE_EOF = "1";
   try {
     const events = startBridge();
-    bridge.stdin.write(frame({ type: "start", piPath: FAKE_PI }));
+    bridge.stdin.write(frame({ type: "start", piPath: FAKE_PI, epoch: 1 }));
     await waitFor(() => expect(events.map((e) => e.type)).toContain("ready"), 10_000);
     const { pid } = JSON.parse(readFileSync(log, "utf8")) as { pid: number };
     const exited = new Promise<number | null>((done) => bridge.on("exit", done));
@@ -86,7 +86,7 @@ test("disconnecting while pi is still starting exits cleanly and stops pi", asyn
   process.env.FAKE_PI_STALL = "1";
   try {
     const events = startBridge();
-    bridge.stdin.write(frame({ type: "start", piPath: FAKE_PI }));
+    bridge.stdin.write(frame({ type: "start", piPath: FAKE_PI, epoch: 1 }));
     await waitFor(() => expect(existsSync(log)).toBe(true), 10_000);
     const { pid } = JSON.parse(readFileSync(log, "utf8")) as { pid: number };
     const exited = new Promise<number | null>((done) => bridge.on("exit", done));
@@ -107,7 +107,7 @@ test("a fatal error reaches a slow reader before the bridge exits", async () => 
   process.env.FAKE_PI_LAUNCH_LOG = log;
   try {
     const events = startBridge();
-    bridge.stdin.write(frame({ type: "start", piPath: FAKE_PI }));
+    bridge.stdin.write(frame({ type: "start", piPath: FAKE_PI, epoch: 1 }));
     await waitFor(() => expect(events.map((e) => e.type)).toContain("ready"), 10_000);
     const { pid } = JSON.parse(readFileSync(log, "utf8")) as { pid: number };
     const exited = new Promise<number | null>((done) => bridge.on("exit", done));
@@ -130,10 +130,10 @@ test("a fatal error reaches a slow reader before the bridge exits", async () => 
 
 test("takes a request the extension sent in parts", async () => {
   const events = startBridge();
-  bridge.stdin.write(frame({ type: "start", piPath: FAKE_PI }));
+  bridge.stdin.write(frame({ type: "start", piPath: FAKE_PI, epoch: 1 }));
   await waitFor(() => expect(events.map((e) => e.type)).toContain("ready"), 10_000);
   const parts = toParts({ type: "prompt", text: "in pieces" }, 8) as BridgeRequest[];
   expect(parts.length).toBeGreaterThan(1);
   bridge.stdin.write(Buffer.concat(parts.map(frame)));
-  await waitFor(() => expect(events).toContainEqual({ type: "chunk", chunk: { type: "text", content: "echo: in pieces" } }), 10_000);
+  await waitFor(() => expect(events).toContainEqual({ type: "chunk", chunk: { type: "text", content: "echo: in pieces" }, epoch: 1 }), 10_000);
 });

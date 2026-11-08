@@ -45,6 +45,9 @@ export type ChatMessage =
 // A live update while pi runs. A run (run_start .. run_end) renders as one
 // assistant message, matching how history merges a run's assistant entries.
 export type ChatChunk =
+  // A user message pi started: one that starts a run, or a queued one it
+  // took mid-run. As pi has it (skill commands expanded).
+  | { type: "user"; text: string; images?: ImageAttachment[]; at: number }
   // `at`: when pi started or settled the run (ms since epoch), for the work timer.
   | { type: "run_start"; at: number }
   // `interrupted`: the user stopped the run.
@@ -57,6 +60,15 @@ export type ChatChunk =
   | { type: "tool_output"; id: string; content: string }
   | { type: "tool_result"; id: string; content: string; isError: boolean; details?: unknown }
   | { type: "notice"; content: string; level: NoticeLevel };
+
+// A message waiting for pi while it works. `steer`: pi takes it after the
+// current step; otherwise once the run would stop.
+export type QueuedMessage = { text: string; steer: boolean };
+
+// What the user does to a queued message, named by its place and text in
+// the queue they saw (pi may have taken or moved messages since; the text
+// decides): steer it, take it back to the message box to edit, or remove it.
+export type QueueAction = { action: "steer" | "edit" | "remove"; index: number; text: string };
 
 // pi's reasoning effort levels.
 export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;

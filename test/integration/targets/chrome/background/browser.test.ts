@@ -5,7 +5,7 @@ import "../../../../support/indexeddb";
 
 import { beforeEach, expect, spyOn, test } from "bun:test";
 
-import { chromeFake } from "../../../../support/chrome";
+import { chromeFake, FakePort } from "../../../../support/chrome";
 import { waitFor } from "../../../../support/wait";
 import type { BridgeEvent } from "../../../../../src/bridge/protocol";
 import * as store from "../../../../../src/background/store";
@@ -108,7 +108,9 @@ test("a late prompt acceptance cannot lift a newer Stop", async () => {
 });
 
 
-test("a prompt saved during bridge restart is delivered to the replacement port", async () => {
+test("a prompt saved during bridge restart is delivered to the replacement port, and not handed back", async () => {
+  const panel = new FakePort("panel");
+  await pi.attachPanel(panel.port);
   await pi.start();
   const previous = bridge();
   const addSession = store.addSession;
@@ -123,11 +125,14 @@ test("a prompt saved during bridge restart is delivered to the replacement port"
   try {
     const sending = pi.prompt("Keep this message");
     await waitFor(() => expect(saving).toBe(true));
-    await pi.restart();
+    // The message finishes storing while the old connection is being torn down.
+    const restarting = pi.restart();
     release();
+    await restarting;
     await sending;
     expect(bridge()).not.toBe(previous);
-    expect(bridge().sent).toContainEqual({ type: "prompt", text: "Keep this message", promptId: undefined });
+    expect(bridge().sent).toContainEqual({ type: "prompt", text: "Keep this message", promptId: expect.any(String) });
     expect(previous.sent.some(message => message.type === "prompt")).toBe(false);
+    expect(panel.sent.some((update: { kind: string }) => update.kind === "restore")).toBe(false);
   } finally { release(); save.mockRestore(); }
 });

@@ -1,22 +1,24 @@
-import type { ChatMessage, ModelState, PiCommand } from "../chat";
+import type { ChatChunk, ChatMessage, ImageAttachment, ModelState, PiCommand, QueuedMessage } from "../chat";
 import { joinParts, postInParts } from "../parts";
 import {
   PANEL_PORT,
-  type LiveItem,
   type PanelRequest,
   type PanelUpdate,
   type PiStatus,
   type SessionMeta,
   type SettingsAnswers,
   type SettingsRequest,
-} from "../shared";
+} from "../panel-protocol";
 
 type Listener = {
   // Called on (re)connect and chat switch; the UI redraws from it.
-  replay: (history: ChatMessage[] | null, live: LiveItem[]) => void;
+  replay: (history: ChatMessage[] | null, live: ChatChunk[]) => void;
   model: (model: ModelState) => void;
   commands: (commands: PiCommand[]) => void;
-  live: (item: LiveItem) => void;
+  live: (chunk: ChatChunk) => void;
+  queue: (queue: QueuedMessage[]) => void;
+  // Messages taken back (a stop, an edit, rejected or never answered).
+  restore: (text: string, images?: ImageAttachment[]) => void;
   status: (s: PiStatus) => void;
   sessions: (sessions: SessionMeta[], currentId: number) => void;
 };
@@ -50,6 +52,13 @@ export class PiClient {
           this.on.model(u.model);
           this.on.commands(u.commands);
           this.on.replay(u.history, u.live);
+          this.on.queue(u.queue);
+          break;
+        case "queue":
+          this.on.queue(u.queue);
+          break;
+        case "restore":
+          this.on.restore(u.text, u.images);
           break;
         case "model":
           this.on.model(u.model);
@@ -58,7 +67,7 @@ export class PiClient {
           this.on.status(u.status);
           break;
         case "live":
-          this.on.live(u.item);
+          this.on.live(u.chunk);
           break;
         case "sessions":
           this.on.sessions(u.sessions, u.currentId);

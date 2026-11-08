@@ -380,6 +380,21 @@ a.tab-chip:hover { background: color-mix(in srgb, var(--fg) 13%, transparent); }
 .attachment-remove svg { width: 10px; height: 10px; stroke-width: 2; }
 .attachment:hover .attachment-remove, .attachment-remove:focus-visible { opacity: 1; }
 
+/* Messages waiting for pi while it works: rows above the text. */
+.queue { display: flex; flex-direction: column; margin: -2px 0 6px -4px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+.queued { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 3px 0 3px 2px; font-size: 12.5px; }
+.queued-icon { display: grid; place-items: center; flex: none; color: var(--faint); }
+.queued-icon svg { width: 14px; height: 14px; }
+.queued.steering .queued-icon { color: var(--fg); }
+.queued-text { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.queued-when { flex: none; font-size: 11px; color: var(--faint); }
+.queued-steer { flex: none; font-size: 11px; color: var(--muted); }
+.queued-steer:hover { color: var(--fg); }
+.queued-icon-btn { display: grid; place-items: center; flex: none; width: 20px; height: 20px; border-radius: 5px; color: var(--faint); }
+.queued-icon-btn svg { width: 12px; height: 12px; }
+.queued-icon-btn:hover { background: var(--surface); color: var(--fg); }
+.queued-edit + .queued-remove { margin-left: -6px; }
+
 /* Files dragged over the panel: the field becomes the drop target. */
 .drop-hint { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; gap: 8px; color: var(--muted); font-weight: 500; pointer-events: none; }
 .field.dropping { border-style: dashed; border-color: var(--muted); background: color-mix(in srgb, var(--fg) 3%, var(--raised)); }

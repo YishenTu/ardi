@@ -61,9 +61,21 @@ describe("assistant messages", () => {
       normalize(
         { type: "message_start", message: { role: "custom", content: [{ type: "text", text: "Hello " }, { type: "text", text: "there" }] } },
         { type: "message_start", message: { role: "custom", content: "hidden", display: false } },
-        { type: "message_start", message: { role: "user", content: "not custom" } },
       ),
     ).toEqual([{ type: "notice", content: "Hello there", level: "info" }]);
+  });
+
+  test("a user message pi starts joins the chat as pi has it; an image-only one (sent with a space) has no text", () => {
+    const image = { type: "image", data: "aGk=", mimeType: "image/png" };
+    expect(
+      normalize(
+        { type: "message_start", message: { role: "user", content: "hello", timestamp: 5 } },
+        { type: "message_start", message: { role: "user", content: [{ type: "text", text: " " }, image], timestamp: 6 } },
+      ),
+    ).toEqual([
+      { type: "user", text: "hello", at: 5 },
+      { type: "user", text: "", images: [{ data: "aGk=", mimeType: "image/png" }], at: 6 },
+    ]);
   });
 });
 

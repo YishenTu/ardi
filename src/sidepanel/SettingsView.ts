@@ -1,4 +1,4 @@
-import type { PiCheck } from "../shared";
+import type { PiCheck } from "../panel-protocol";
 import { askSettings } from "./pi";
 
 // The settings screen, over the chat. The background owns the settings; this
