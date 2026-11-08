@@ -17,7 +17,7 @@ const TOOLS: Record<string, { label: string; view?: View }> = {
   read_tab: { label: "Read tab", view: "tab" },
   view_image: { label: "Viewed image", view: "image" },
   open_tab: { label: "Opened tab", view: "opened_tab" },
-  // Each browser's own way to act in the page: Python in Ardia, JavaScript in Chrome.
+  // Each browser's own way to act in the page: browse commands in Ardia, JavaScript in Chrome.
   ardia_exec: { label: "Ran in browser", view: "code" },
   browser_exec: { label: "Ran in browser", view: "code" },
   userscript: { label: "Userscript" },

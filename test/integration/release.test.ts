@@ -115,8 +115,8 @@ test("release installs survive deleting downloads, coexist, and preserve shared 
         expect(entrypoint).toEndWith(join("runtime", target, "app", "agent", "extension"));
         expect(existsSync(join(entrypoint, "index.js"))).toBe(true);
       } finally { child.stdin.end(); await exited; }
-      expect(existsSync(join(installed, "agent/references", target === "ardia" ? "ardia.md" : "chrome.md"))).toBe(true);
-      if (target === "ardia") expect(readFileSync(join(installed, "agent/references/ardia.md"), "utf8")).not.toContain(root);
+      expect(existsSync(join(installed, "agent/references", target === "ardia" ? "ardia-app.md" : "chrome.md"))).toBe(true);
+      if (target === "ardia") expect(readFileSync(join(installed, "agent/references/ardia-app.md"), "utf8")).not.toContain(root);
     }
     if (!windows) expect(readFileSync(join(home, ".ardi/runtime/ardia", LAUNCHER), "utf8")).toBe(launchers[0]);
     expect(readFileSync(join(home, ".ardi/AGENTS.md"), "utf8")).toBe("User instructions\n");
