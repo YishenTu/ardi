@@ -1,6 +1,6 @@
 # Changing Ardia itself
 
-Use these when the user asks Ardia to do something to itself (its tabs, windows, layout, settings, theme), to change a site every time they visit it, to react to what happens in Ardia, or about what they browsed, instead of working through a web page. They run in bash; `ardia <command> --help` explains each.
+Use these when the user asks Ardia to do something to itself (its tabs and groups, windows, layout, settings, theme), to change a site every time they visit it, to react to what happens in Ardia, or about what they browsed, instead of working through a web page. They run in bash; `ardia <command> --help` explains each.
 
 ## Ardia's commands
 
@@ -19,6 +19,42 @@ ardia events tab.navigated
 A command acts on the last focused window, or on `--window ID` with an id from `ardia windows`. `ardia windows` lists every window with its tabs (url, title, active, pinned, group), private windows never included. Its `tab-…` ids also work in ardia_exec's `tab tab-…`.
 
 Ask first, as for anything with consequences, before commands that close or lose things (`closeTab`, `closeAllTabs`, `clearBrowsingData`) or that open settings dialogs.
+
+## Tabs and groups
+
+To organize tabs (open, move, nest, pin, rename, set icons and colours, mute, sleep, close), use `ardia tabs` and `ardia groups` instead of `ardia run` or the sidebar. They act on tabs and groups by id without changing the tab a window shows. Read the workspace first:
+
+```sh
+ardia tabs --json        # windows › spaces (one per profile) › topApps, pinned, tabs; groups nest with items
+ardia tabs --flat --json # one object per tab: id, url, title, pin, group, window, profile, active, asleep
+ardia groups --json      # every group: id, name, icon, color, collapsed, pinned, parent, depth, tabs
+```
+
+```sh
+ardia tabs open https://a.example https://b.example --group Work  # background tabs, in that group
+ardia tabs move tab-1 tab-2 --group Work                           # into a group, by name or id
+ardia tabs move tab-3 --top                                        # out of every group
+ardia tabs move tab-4 --after tab-9                                # next to a tab, in its group
+ardia tabs pin tab-5 --row ; ardia tabs sleep tab-6 ; ardia tabs rename tab-7 "Inbox"
+ardia groups create tab-1 tab-2 --name Work --icon 🚀 --color blue --unpinned
+ardia groups update Work --collapse ; ardia groups move Reading --parent Work ; ardia groups ungroup Imported
+```
+
+For a whole layout, send one `ardia apply` with a JSON list on stdin, where `$N` is what operation N made (its group, else its tabs). It checks every operation first, runs them in order and stops at the first that fails, saying which ran. With `--json` it returns the resulting tabs and groups: verify from that.
+
+```sh
+ardia apply --json <<'EOF'
+[{"op": "group.create", "urls": ["https://a.example", "https://b.example"], "name": "Research", "pinned": false},
+ {"op": "group.create", "parent": "$0", "tabs": ["tab-7", "tab-8"], "name": "Papers", "icon": "📚"},
+ {"op": "group.update", "group": "$1", "collapsed": true},
+ {"op": "tab.move", "tabs": ["tab-9"], "group": null}]
+EOF
+```
+
+- Group arguments take a name (case-insensitive, in that window) or an id; a name two groups share fails with both ids.
+- New groups are pinned, as in the sidebar, unless `"pinned": false` or they have a `parent`. Icons: an emoji from Ardia's picker or `symbol:<SF Symbol>`. Colours: neutral, none, grey, blue, red, yellow, green, pink, purple, cyan, orange.
+- URLs: http, https, file, about:blank and ardia://history, bookmarks, downloads, newtab only.
+- `groups close` keeps a group in History › Recently Closed Groups; `groups delete` doesn't. Shared-folder groups and private windows are refused. Ask before closing or deleting tabs or groups the user didn't name.
 
 ## History and pinned tabs
 
@@ -68,7 +104,7 @@ A hook reacts to the browser (a tab opening, a page loading, media starting, a t
 ```
 
 - A hook has one trigger (`on` an event, `at` a time with optional `days`/`timezone`, `every`, or `omnibox`) and one action: `run` (argv), `command` (an Ardia command id, with `arg`, run in the event's window and tab, no process), or a decide answer.
-- A `run` program gets the event's JSON on stdin and `ARDIA_EVENT`, `ARDIA_URL`, `ARDIA_TITLE`, `ARDIA_TAB_ID`, `ARDIA_WINDOW_ID` and `ARDIA_PROFILE` in its environment. `ardia events --help` lists every event. URLs arrive without their query and fragment unless the hook says `"fullUrls": true`. Notification and presence events (`user.idle`, `app.activated`, `system.sleep`…) come only when named, never through `"*"`. `match` takes userscript match patterns.
+- A `run` program gets the event's JSON on stdin and `ARDIA_EVENT`, `ARDIA_URL`, `ARDIA_TITLE`, `ARDIA_TAB_ID`, `ARDIA_WINDOW_ID` and `ARDIA_PROFILE` in its environment. Those values come from pages: a program that prints them to a terminal must escape control characters. `ardia events --help` lists every event. URLs arrive without their query and fragment unless the hook says `"fullUrls": true`. Notification and presence events (`user.idle`, `app.activated`, `system.sleep`…) come only when named, never through `"*"`. `match` takes userscript match patterns.
 - `run` is argv, not a shell line; use `["/bin/sh", "-c", "…"]` when you need one, and never paste event values into it.
 - Decide hooks answer before Ardia acts: `tab.opening` (`rewrite`, `cancel`), `link.opening` from other apps (`route`, `drop`, `from`), `download.deciding` (`folder` under `~/Downloads`), `permission.requested` (`permission`: deny or ask). As rules, Ardia applies them itself; with `run`, the program's stdout JSON is the answer, within 250 ms for openings. Anything late or invalid means Ardia's default.
 - Rules that rewrite to another site, route links, pick a folder outside Downloads, run a decide program or read the address bar (`omnibox`) stay off until the user approves them in Settings › Advanced › Automation. Tell the user that after writing one.

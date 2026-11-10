@@ -1,5 +1,5 @@
-// Ardia's native messaging host. Pi's tools drive Ardia with `ardia exec`
-// directly, so there is no relay to the extension.
+// Ardia's native messaging host. Pi's tools drive Ardia with the ardia
+// command (`ardia browse`) directly, so there is no relay to the extension.
 import { resolve } from "node:path";
 
 import { runBridge } from "../../../bridge/host";
