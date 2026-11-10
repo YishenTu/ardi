@@ -1,15 +1,16 @@
 # AGENTS.md
 
-Ardi is a side panel extension that wraps the locally installed Pi coding agent. The Ardia build controls the browser through `ardia exec`; the Chrome build uses the extension's debugger API in the user's existing Chrome profile.
+Ardi is a side panel extension that wraps the locally installed Pi coding agent. The Ardia build controls the browser through the `ardia` command (`ardia browse`); the Chrome build uses the extension's debugger API in the user's existing Chrome profile.
 
 ## Browser and installation constraints
 
-- **Keep browser targets explicit.** Ardia tools use `ardia exec`; Chrome tools use the hosting extension's debugger API without remote-debugging flags. Never fall back across browsers.
+- **Keep browser targets explicit.** Ardia tools use the `ardia` command; Chrome tools use the hosting extension's debugger API without remote-debugging flags. Never fall back across browsers.
 - **Keep targets split.** Browser-specific code, configuration and Pi setup live in `src/targets/<target>/`. Shared code never imports a target or branches on one; targets plug in through `BackgroundTarget` (`src/background/target.ts`) and `BridgeTarget` (`src/bridge/host.ts`) from their entry points. Targets never import each other.
 - **Preserve extension identities.** Keep each extension's key in `src/targets/<target>/manifest.json` and its native host name in `target.json`: native host allowlists depend on them. After changing a host path or registration, rerun `bun run host:install <ardia|chrome>`.
 - **Resolve runtime files at entry depth.** The bridge and Pi extension are each bundled into one file, so every bundled module's `import.meta.dirname` is the entry's output directory. Resolve files only from modules in `src/bridge/` or a target's `bridge/` or `agent/extension/`, so source and `dist/` paths agree.
 - **Rebuild and reload.** Development artifacts, including each bridge and agent setup, live in `dist/<target>/`. Release installers copy them into `~/.ardi/runtime/<target>/app/`. After source changes, rebuild and reload the affected extension so its bridge restarts.
 - **Preserve the shared working directory.** Both versions run Pi in `~/.ardi/` and share user instructions and skills. Pi stores sessions per working directory, so changing it breaks resume.
+- **Build Ardia's skill into Pi.** Pi never loads Ardia's own agent skill (upstream `apps/cli/ardia_cli/skill/`). Its content reaches Pi as tools in `src/targets/ardia/agent/extension/`, the system-prompt guide in `guide.ts`, and references in `agent/references/` for rarer tasks, so the agent can work without reading the skill. When upstream's skill or CLI changes, update all three to match.
 - **Keep launchers separate.** Generated launchers belong in `~/.ardi/runtime/<target>/` so installing one version cannot redirect the other.
 
 ## Commands

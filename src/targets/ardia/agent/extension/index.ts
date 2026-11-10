@@ -33,7 +33,9 @@ type Run = { code: number; stdout: string; stderr: string };
 
 function ardia(args: string[], opts: { session?: string; input?: string; signal?: AbortSignal } = {}): Promise<Run> {
   return new Promise((resolve, reject) => {
-    const env = opts.session ? { ...process.env, AGENT_BROWSER_SESSION: opts.session } : process.env;
+    // ARDIA_STAR_PROMPT=0: the CLI otherwise asks its caller, here Pi, to
+    // have the user star Ardia's repo.
+    const env = { ...process.env, ARDIA_STAR_PROMPT: "0", ...(opts.session ? { AGENT_BROWSER_SESSION: opts.session } : {}) };
     const child = execFile("ardia", args, { env, signal: opts.signal, maxBuffer: 64 * 1024 * 1024 }, (error, stdout, stderr) => {
       const code = (error as { code?: unknown } | null)?.code;
       if (error && typeof code !== "number") return reject(code === "ENOENT" ? new ArdiaError("The ardia command isn't installed. Ask the user to install it from Ardia's Settings › Advanced › Command Line.") : error);
@@ -215,11 +217,12 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "ardia_exec",
     label: "Run in browser",
-    description: `Run ardia browse commands (agent-browser's command line) in the user's browser, for anything the other tools don't cover: snapshot, click, fill, select, press, wait, scroll, screenshot, eval, reading many pages, site notes. One command per line, run in order in one call; it stops at the first failure. The browser section of your instructions explains how to use it. With script, code is JavaScript for ardia browse script instead (loops over pages; ardia browse script --help lists its API). To act on Ardia itself (its commands such as new window, split pane or select tab; settings, shortcuts and themes that should last; userscripts that change how a site looks or behaves on every visit; hooks that run on tab and window events; browsing history and pinned tabs), read ${resolve(import.meta.dirname, "../references/ardia-app.md")} and use the ardia command in bash.`,
+    description: `Run ardia browse commands (agent-browser's command line) in the user's browser, for anything the other tools don't cover: snapshot, click, fill, select, press, wait, scroll, screenshot, eval, reading many pages, site notes. One command per line, run in order in one call; it stops at the first failure. The browser section of your instructions explains how to use it. With script, code is JavaScript for ardia browse script instead (loops over pages; ardia browse script --help lists its API). To act on Ardia itself (organizing tabs and groups; its commands such as new window, split pane or select tab; settings, shortcuts and themes that should last; userscripts that change how a site looks or behaves on every visit; hooks that run on tab and window events; browsing history and pinned tabs), read ${resolve(import.meta.dirname, "../references/ardia-app.md")} and use the ardia command in bash.`,
     parameters: Type.Object({
       code: Type.String({ description: "ardia browse commands, one per line, without the `ardia browse` prefix (shell quoting, e.g. fill @e3 \"Ana Ruiz\"); or JavaScript when script is true" }),
       script: Type.Optional(Type.Boolean({ description: "Run code as an ardia browse script (JavaScript) instead of commands" })),
-      timeout: Type.Optional(Type.Number({ description: `Seconds a script may run (default ${SCRIPT_TIMEOUT_S})`, minimum: 1 })),
+      // The CLI refuses a script timeout past 10 minutes.
+      timeout: Type.Optional(Type.Number({ description: `Seconds a script may run (default ${SCRIPT_TIMEOUT_S}, at most 600)`, minimum: 1, maximum: 600 })),
     }),
     annotations: { destructiveHint: true, openWorldHint: true },
     async execute(_id, params, signal, _onUpdate, ctx) {
