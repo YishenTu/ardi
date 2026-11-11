@@ -1,7 +1,6 @@
-import type { BridgeEvent, PiCheck } from "../bridge/protocol";
-import { joinParts, postInParts } from "../parts";
+import type { PiCheck } from "../bridge/protocol";
 import type { Settings } from "../panel-protocol";
-import { target } from "./target";
+import { askBridge } from "./ask-bridge";
 
 // Ardi's settings, in chrome.storage.local. Owned here: the side panel asks
 // for them and for changes, and pi-session reads them when it starts pi.
@@ -26,19 +25,13 @@ export async function setPiPath(piPath: string): Promise<{ saved: boolean; check
 // Asks a short-lived bridge to run `pi --version`. It's separate from the
 // bridge running pi, which may be down because of a bad path.
 export function checkPi(piPath: string): Promise<PiCheck> {
-  return new Promise((resolve) => {
-    const port = chrome.runtime.connectNative(target().nativeHost);
-    port.onMessage.addListener(
-      joinParts<BridgeEvent>((event) => {
-        if (event.type !== "pi_check") return;
-        const { type: _, ...check } = event;
-        resolve(check);
-        port.disconnect();
-      }),
-    );
-    port.onDisconnect.addListener(() => {
-      resolve({ command: piPath, error: chrome.runtime.lastError?.message ?? "The bridge closed" });
-    });
-    postInParts(port, { type: "check_pi", piPath: piPath || undefined });
-  });
+  return askBridge(
+    { type: "check_pi", piPath: piPath || undefined },
+    (event) => {
+      if (event.type !== "pi_check") return;
+      const { type: _, ...check } = event;
+      return check;
+    },
+    (error) => ({ command: piPath, error }),
+  );
 }

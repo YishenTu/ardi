@@ -1,5 +1,5 @@
 import type { PiCheck } from "../panel-protocol";
-import { askSettings } from "./pi";
+import { askBackground } from "./pi";
 
 // The settings screen, over the chat. The background owns the settings; this
 // shows them and asks for changes. A field saves when it's committed (Enter
@@ -38,7 +38,7 @@ export class SettingsView {
   async open() {
     this.root.hidden = false;
     this.path.disabled = true;
-    const { settings, check } = await askSettings({ kind: "get_settings" });
+    const { settings, check } = await askBackground({ kind: "get_settings" });
     this.saved = this.path.value = settings.piPath;
     this.path.disabled = false;
     this.show(check);
@@ -55,7 +55,7 @@ export class SettingsView {
     if (value === this.saved) return;
     this.status.dataset.state = "";
     this.status.textContent = "Checking…";
-    const { saved, check } = await askSettings({ kind: "set_pi_path", piPath: value });
+    const { saved, check } = await askBackground({ kind: "set_pi_path", piPath: value });
     if (saved) this.saved = value;
     this.show(check);
   }

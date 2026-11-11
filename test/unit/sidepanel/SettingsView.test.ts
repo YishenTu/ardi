@@ -3,11 +3,11 @@ import { beforeEach, describe, expect, test } from "bun:test";
 import { chromeFake } from "../../support/chrome";
 import { $, loadPanel } from "../../support/panel";
 import { waitFor } from "../../support/wait";
-import type { SettingsRequest } from "../../../src/panel-protocol";
+import type { PanelQuestion } from "../../../src/panel-protocol";
 import { SettingsView } from "../../../src/sidepanel/SettingsView";
 
 // The background's answers. `pending` holds get_settings until released.
-let requests: SettingsRequest[];
+let requests: PanelQuestion[];
 let savedPath: string;
 let release: () => void;
 
@@ -18,12 +18,13 @@ function background({ working = ["/opt/pi"], hold = false } = {}) {
     const command = path || "/installed/pi";
     return working.includes(command) ? { command, version: "1.4.0" } : { command, error: `Pi not found at ${command}` };
   };
-  chromeFake.onSendMessage = async (req: SettingsRequest) => {
+  chromeFake.onSendMessage = async (req: PanelQuestion) => {
     requests.push(req);
     if (req.kind === "get_settings") {
       if (hold) await held;
       return { settings: { piPath: savedPath }, check: check(savedPath) };
     }
+    if (req.kind !== "set_pi_path") return;
     const result = check(req.piPath);
     const saved = !result.error || !req.piPath;
     if (saved) savedPath = req.piPath;

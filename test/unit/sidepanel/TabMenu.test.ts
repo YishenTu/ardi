@@ -11,6 +11,7 @@ let menu: TabMenu;
 
 beforeEach(() => {
   loadPanel();
+  chromeFake.onSendMessage = (m) => (m.kind === "mention_tabs" ? { tabs: null } : undefined);
   composer = new Composer($("input"));
   list = $("tab-menu");
   menu = new TabMenu(composer, list);
@@ -37,6 +38,16 @@ describe("TabMenu", () => {
     expect(shown()).toEqual(["Bun docs", "Hacker News"]);
     await type("compare @ycomb");
     expect(shown()).toEqual(["Hacker News"]);
+  });
+
+  // In Ardia, tabs of every profile, loaded or not, reach chrome.tabs, some
+  // at the same address as a tab the user may mean.
+  test("lists only the tabs the background names when it narrows them, most recent first", async () => {
+    chromeFake.tabs.push({ title: "Hacker News in another profile", url: "https://news.ycombinator.com/", lastAccessed: 1 });
+    const allowed = [{ title: "Hacker News", url: "https://news.ycombinator.com/" }, { title: "Bun docs", url: "https://bun.sh/docs" }];
+    chromeFake.onSendMessage = (m) => (m.kind === "mention_tabs" ? { tabs: allowed } : undefined);
+    await type("@");
+    expect(shown()).toEqual(["Bun docs", "Hacker News"]);
   });
 
   test("only an @ that starts a word opens it, and a space closes it", async () => {
