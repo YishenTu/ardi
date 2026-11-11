@@ -2,6 +2,7 @@ import type { TabMention } from "../mention";
 import type { Composer } from "./Composer";
 import { favicon, host } from "./dom";
 import { Dropup } from "./Dropup";
+import { askBackground } from "./pi";
 
 // "@" at the start of a word, and what's typed after it.
 const TRIGGER = /(?:^|\s)@([^\s@]*)$/;
@@ -45,11 +46,13 @@ export class TabMenu {
   }
 }
 
-// Web page tabs (what pi's tools can reach), most recently used first.
+// Web page tabs (what pi's tools can reach), most recently used first. In
+// Ardia, the tabs the background names (the current profile's loaded ones):
+// chrome.tabs can't tell profiles apart, so it gives only the order.
 async function openTabs(): Promise<TabMention[]> {
-  const tabs = await chrome.tabs.query({});
-  return tabs
-    .filter((t) => /^https?:/.test(t.url ?? ""))
-    .sort((a, b) => b.lastAccessed - a.lastAccessed)
-    .map((t) => ({ title: t.title || t.url!, url: t.url! }));
+  const [tabs, named] = await Promise.all([chrome.tabs.query({}), askBackground({ kind: "mention_tabs" })]);
+  const used = new Map<string, number>();
+  for (const t of tabs) if (t.url) used.set(t.url, Math.max(used.get(t.url) ?? 0, t.lastAccessed));
+  const all = named.tabs ?? tabs.map((t) => ({ title: t.title || t.url!, url: t.url ?? "" }));
+  return all.filter((t) => /^https?:/.test(t.url)).sort((a, b) => (used.get(b.url) ?? 0) - (used.get(a.url) ?? 0));
 }

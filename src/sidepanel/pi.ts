@@ -6,8 +6,8 @@ import {
   type PanelUpdate,
   type PiStatus,
   type SessionMeta,
-  type SettingsAnswers,
-  type SettingsRequest,
+  type PanelAnswers,
+  type PanelQuestion,
 } from "../panel-protocol";
 
 type Listener = {
@@ -102,6 +102,6 @@ export class PiClient {
 }
 
 // Asks the background a settings question and waits for the answer.
-export function askSettings<R extends SettingsRequest>(req: R): Promise<SettingsAnswers[R["kind"]]> {
+export function askBackground<R extends PanelQuestion>(req: R): Promise<PanelAnswers[R["kind"]]> {
   return chrome.runtime.sendMessage(req);
 }

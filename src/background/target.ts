@@ -16,6 +16,9 @@ export interface BrowserLink {
 // background entry sets it before anything else runs.
 export interface BackgroundTarget {
   nativeHost: string;
+  // The browser shows the extension tabs the user can't mean (Ardia: other
+  // profiles' and unloaded ones), so the @ menu asks the bridge which to list.
+  narrowsTabs?: boolean;
   connectBrowser?(reply: (reply: BrowserReply) => void): BrowserLink;
 }
 

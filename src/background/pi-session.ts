@@ -200,7 +200,8 @@ async function onBridgeEvent(event: Exclude<BridgeEvent, { type: "browser_reques
       if (connection.state !== "down") handBack(connection.unanswered);
       break;
     case "pi_check":
-      // Only sent to settings' own one-shot port (settings.ts).
+    case "tabs":
+      // Only sent to the one-shot ports of ask-bridge.ts.
       break;
   }
 }

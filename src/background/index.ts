@@ -1,7 +1,8 @@
 import { joinParts } from "../parts";
-import { PANEL_PORT, type PanelRequest, type SettingsAnswers, type SettingsRequest } from "../panel-protocol";
+import { PANEL_PORT, type PanelRequest, type PanelAnswers, type PanelQuestion } from "../panel-protocol";
 import * as pi from "./pi-session";
 import * as settings from "./settings";
+import { mentionableTabs } from "./tabs";
 import { setTarget, type BackgroundTarget } from "./target";
 
 // The service worker, started by each target's background entry with its
@@ -21,8 +22,8 @@ export function startBackground(target: BackgroundTarget): void {
     port.onMessage.addListener(joinParts<PanelRequest>((req) => void handle(req)));
   });
 
-  // The settings screen's questions. Answered asynchronously (return true).
-  chrome.runtime.onMessage.addListener((req: SettingsRequest, _sender, respond) => {
+  // The panel's one-off questions. Answered asynchronously (return true).
+  chrome.runtime.onMessage.addListener((req: PanelQuestion, _sender, respond) => {
     void answer(req).then(respond);
     return true;
   });
@@ -54,16 +55,18 @@ function handle(req: PanelRequest) {
   }
 }
 
-async function answer(req: SettingsRequest) {
+async function answer(req: PanelQuestion) {
   switch (req.kind) {
     case "get_settings": {
       const saved = await settings.loadSettings();
-      return { settings: saved, check: await settings.checkPi(saved.piPath) } satisfies SettingsAnswers["get_settings"];
+      return { settings: saved, check: await settings.checkPi(saved.piPath) } satisfies PanelAnswers["get_settings"];
     }
     case "set_pi_path": {
       const result = await settings.setPiPath(req.piPath);
       if (result.saved && !result.check.error) await pi.restart();
-      return result satisfies SettingsAnswers["set_pi_path"];
+      return result satisfies PanelAnswers["set_pi_path"];
     }
+    case "mention_tabs":
+      return { tabs: await mentionableTabs() } satisfies PanelAnswers["mention_tabs"];
   }
 }
