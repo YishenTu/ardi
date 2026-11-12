@@ -1,5 +1,6 @@
 // Messages between the extension's background and the bridge, over Chrome
 // native messaging.
+import type { TabMention } from "../mention";
 import type { ChatChunk, ChatMessage, ImageAttachment, ModelState, PiCommand, QueueAction, QueuedMessage, ThinkingLevel } from "../chat";
 
 // A target can let pi's tools reach the extension through the bridge: the
@@ -22,6 +23,8 @@ export type BridgeRequest =
   | { type: "start"; sessionFile?: string; piPath?: string }
   // Runs `pi --version` without starting pi. Answered with `pi_check`.
   | { type: "check_pi"; piPath?: string }
+  // The tabs the user may @ mention. Answered with `tabs`.
+  | { type: "list_tabs" }
   // pi starts a run with it, or while it works queues it: to take after its
   // current step (`steer`) or once done. The chat shows it as a `user` chunk
   // once pi starts it; if pi rejects it, it comes back as `restore`.
@@ -65,5 +68,7 @@ export type BridgeEvent =
   // Messages taken back (a stop, an edit, or rejected by pi), for the message box.
   | { type: "restore"; text: string; images?: ImageAttachment[] }
   | ({ type: "pi_check" } & PiCheck)
+  // null: the target doesn't narrow them, so any open tab will do.
+  | { type: "tabs"; tabs: TabMention[] | null }
   // pi failed to start or exited; the bridge exits after sending this.
   | { type: "fatal"; message: string };

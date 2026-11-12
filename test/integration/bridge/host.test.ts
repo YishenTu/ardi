@@ -5,9 +5,9 @@ import { afterEach, expect, test } from "bun:test";
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { delimiter, join, resolve } from "node:path";
 
-import { FAKE_PI } from "../../support/executables";
+import { FAKE_PI, executable } from "../../support/executables";
 import { waitFor } from "../../support/wait";
 import { type BridgeEvent, type BridgeRequest } from "../../../src/bridge/protocol";
 import { joinParts, toParts } from "../../../src/parts";
@@ -27,10 +27,10 @@ function frame(request: BridgeRequest): Buffer {
 }
 
 // Starts the bridge and collects the events it sends, as the extension reads them.
-function startBridge(): BridgeEvent[] {
+function startBridge(env: NodeJS.ProcessEnv = process.env): BridgeEvent[] {
   const events: BridgeEvent[] = [];
   const listen = joinParts<BridgeEvent>((event) => events.push(event));
-  bridge = spawn(process.execPath, [MAIN], { env: process.env });
+  bridge = spawn(process.execPath, [MAIN], { env });
   let buffer = Buffer.alloc(0);
   bridge.stdout.on("data", (chunk: Buffer) => {
     buffer = Buffer.concat([buffer, chunk]);
@@ -138,4 +138,23 @@ test("takes a request the extension sent in parts", async () => {
   expect(parts.length).toBeGreaterThan(1);
   bridge.stdin.write(Buffer.concat(parts.map(frame)));
   await waitFor(() => expect(events).toContainEqual({ type: "chunk", chunk: { type: "text", content: "echo: in pieces" } }), 10_000);
+});
+
+// `ardia windows --json`: the user is in the Work profile (the focused
+// window's), which has tabs in both windows; Ardia lists unloaded tabs too,
+// with no targetId.
+const FAKE_ARDIA = String.raw`
+const tab = (url, profile, loaded) => ({ id: url, url, title: "Title of " + url, profile, targetId: loaded ? "T-" + url : null });
+console.log(JSON.stringify([
+  { focused: false, profile: "default", tabs: [tab("https://other-window.test/", "work", true), tab("https://home.test/", "default", true)] },
+  { focused: true, profile: "work", tabs: [tab("https://work.test/", "work", true), tab("https://asleep.test/", "work", false), tab("https://personal.test/", "default", true)] },
+]));
+`;
+
+test.skipIf(process.platform === "win32")("lists the loaded tabs of the Ardia profile the user is in", async () => {
+  const bin = join(homedir(), "fake-ardia");
+  executable("ardia", FAKE_ARDIA, bin);
+  const events = startBridge({ ...process.env, PATH: `${bin}${delimiter}${process.env.PATH}` });
+  bridge.stdin.write(frame({ type: "list_tabs" }));
+  await waitFor(() => expect(events).toContainEqual({ type: "tabs", tabs: ["https://other-window.test/", "https://work.test/"].map((url) => ({ title: "Title of " + url, url })) }), 10_000);
 });

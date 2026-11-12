@@ -3,4 +3,4 @@
 import { startBackground } from "../../../background";
 import target from "../target.json";
 
-startBackground({ nativeHost: target.nativeHost });
+startBackground({ nativeHost: target.nativeHost, narrowsTabs: true });

@@ -1,4 +1,5 @@
 import type { PiCheck } from "./bridge/protocol";
+import type { TabMention } from "./mention";
 // So the panel gets it from here, not from the bridge.
 export type { PiCheck };
 import type { ChatChunk, ChatMessage, ImageAttachment, ModelState, PiCommand, QueueAction, QueuedMessage, ThinkingLevel } from "./chat";
@@ -55,18 +56,21 @@ export type Settings = {
   piPath: string;
 };
 
-// The settings screen's questions, sent with chrome.runtime.sendMessage, and
-// their answers.
-export type SettingsRequest =
+// The panel's one-off questions (the settings screen's, the @ menu's), sent
+// with chrome.runtime.sendMessage, and their answers.
+export type PanelQuestion =
   // The saved settings, and a check of the saved pi path.
   | { kind: "get_settings" }
   // Saves a new pi path if it checks out (empty, back to the installed pi,
   // always saves), then restarts pi if it works.
-  | { kind: "set_pi_path"; piPath: string };
+  | { kind: "set_pi_path"; piPath: string }
+  // The tabs the @ menu may list; null for any web page tab.
+  | { kind: "mention_tabs" };
 
-// The answer to each kind of SettingsRequest.
-export type SettingsAnswers = {
+// The answer to each kind of PanelQuestion.
+export type PanelAnswers = {
   get_settings: { settings: Settings; check: PiCheck };
   set_pi_path: { saved: boolean; check: PiCheck };
+  mention_tabs: { tabs: TabMention[] | null };
 };
 

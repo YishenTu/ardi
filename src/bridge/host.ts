@@ -7,6 +7,7 @@ import { exitAfterFlush, onExtensionMessage, sendToExtension } from "./nativeMes
 import { checkPi, type PiTarget } from "./launch";
 import { PiSession } from "./PiSession";
 import { joinParts } from "../parts";
+import type { TabMention } from "../mention";
 import { RELAY_TOKEN_ENV, RELAY_URL_ENV, type BridgeEvent, type BridgeRequest, type BrowserReply } from "./protocol";
 
 // A local endpoint pi's tools call to reach the extension (see protocol.ts).
@@ -19,6 +20,9 @@ export interface BrowserRelay {
 
 export interface BridgeTarget extends PiTarget {
   relay?(send: (event: BridgeEvent) => void): Promise<BrowserRelay>;
+  // The tabs the user may @ mention, when the browser shows the extension
+  // more tabs than that; null when it can't tell.
+  mentionableTabs?(): Promise<TabMention[] | null>;
 }
 
 // Stdin is read only once the relay listens, so pi always gets its address.
@@ -44,6 +48,8 @@ export async function runBridge(target: BridgeTarget): Promise<void> {
           return session.start(request.sessionFile, request.piPath);
         case "check_pi":
           return void checkPi(request.piPath).then((check) => sendToExtension({ type: "pi_check", ...check }));
+        case "list_tabs":
+          return void (target.mentionableTabs?.() ?? Promise.resolve(null)).then((tabs) => sendToExtension({ type: "tabs", tabs }));
         case "prompt":
           return void session.prompt(request.text, { promptId: request.promptId, images: request.images, steer: request.steer });
         case "queue_action":
