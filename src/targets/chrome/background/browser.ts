@@ -12,14 +12,21 @@ const METHODS = new Set([
 ]);
 const webPage = (url: string) => /^(https?:\/\/|about:blank$|data:|blob:)/.test(url);
 
+// The extension's debugger attachments, shared by every controller (one per
+// chat with pi running): Chrome lets the extension attach to a tab only once,
+// so two chats on one tab share it, and it detaches when the last lets go.
+// A detach in flight stays here (`detaching`) until Chrome is done, so a
+// controller reaching the tab meanwhile waits for it instead of failing.
+type Attachment = { pending: Promise<void>; users: Set<ChromeBrowserController>; detaching?: Promise<void> };
+const attached = new Map<number, Attachment>();
+
 export class ChromeBrowserController {
   private closed = false;
-  private readonly attaching = new Map<number, Promise<void>>();
   private cancellation = new AbortController();
   private cancellationEpoch = 0;
   private readonly onDetach = (source: chrome.debugger.Debuggee, reason: string) => {
     if (source.tabId === undefined) return;
-    this.attaching.delete(source.tabId);
+    attached.delete(source.tabId);
     if (reason === "canceled_by_user") this.cancel();
   };
 
@@ -107,10 +114,14 @@ export class ChromeBrowserController {
     if (this.closed) return;
     this.closed = true;
     chrome.debugger.onDetach.removeListener(this.onDetach);
-    await Promise.all([...this.attaching].map(async ([tabId, pending]) => {
-      try { await pending; await chrome.debugger.detach({ tabId }); } catch { /* Already detached/closed. */ }
+    await Promise.all([...attached].map(async ([tabId, entry]) => {
+      if (!entry.users.delete(this) || entry.users.size || entry.detaching) return;
+      entry.detaching = (async () => {
+        try { await entry.pending; await chrome.debugger.detach({ tabId }); } catch { /* Already detached/closed. */ }
+        if (attached.get(tabId) === entry) attached.delete(tabId);
+      })();
+      await entry.detaching;
     }));
-    this.attaching.clear();
   }
 
   private checkOpen(signal?: AbortSignal) {
@@ -166,7 +177,7 @@ export class ChromeBrowserController {
     } finally {
       chrome.debugger.onEvent.removeListener(onEvent);
       if (tabId !== undefined) {
-        this.attaching.delete(tabId);
+        attached.delete(tabId);
         await chrome.tabs.remove(tabId).catch(() => {});
       }
     }
@@ -185,12 +196,19 @@ export class ChromeBrowserController {
   }
   private async attach(tabId: number, signal?: AbortSignal) {
     this.checkOpen(signal);
-    let pending = this.attaching.get(tabId);
-    if (!pending) {
-      pending = chrome.debugger.attach({ tabId }, "1.3").catch((error: unknown) => { this.attaching.delete(tabId); throw error; });
-      this.attaching.set(tabId, pending);
+    let entry = attached.get(tabId);
+    while (entry?.detaching) {
+      await entry.detaching;
+      this.checkOpen(signal);
+      entry = attached.get(tabId);
     }
-    await pending;
+    if (!entry) {
+      const pending = chrome.debugger.attach({ tabId }, "1.3").catch((error: unknown) => { attached.delete(tabId); throw error; });
+      entry = { pending, users: new Set() };
+      attached.set(tabId, entry);
+    }
+    entry.users.add(this);
+    await entry.pending;
   }
 }
 

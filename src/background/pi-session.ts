@@ -8,7 +8,9 @@ import { loadSettings } from "./settings";
 import * as store from "./store";
 import { target, type BrowserLink } from "./target";
 
-// Owns the bridge connection (one pi process) and the current chat. Lives in
+// Owns the chats and their bridge connections. Each chat with pi running has
+// its own bridge (its own pi process, on that chat's session for life), so a
+// chat the user leaves while pi works keeps going in the background. Lives in
 // the service worker, so it keeps running when the side panel is closed. An
 // open native port keeps the service worker alive (Chrome 105+).
 //
@@ -22,31 +24,51 @@ const TITLE_LEN = 60;
 // first, they go back to the message box: the chat never showed them.
 type Unanswered = Map<string, { text: string; images?: ImageAttachment[]; accept?: () => void }>;
 
-// The bridge connection: down, or a port (with the target's browser link
-// for it, and what it hasn't answered) that is connecting until the bridge
-// reports pi ready on the latest start or open.
+// A chat's bridge connection: down, or a port (with the target's browser
+// link for it, what it hasn't answered, and how many requests were sent on
+// it) that is connecting until the bridge reports pi ready.
 type Connection =
   | { state: "down" }
-  | { state: "connecting" | "connected"; port: chrome.runtime.Port; browser: BrowserLink | null; unanswered: Unanswered };
-let connection: Connection = { state: "down" };
-// Labels each start and open sent to the bridge. Session events labelled
-// with an older one are about a chat the user left (a switch stops the run
-// first, and its last output arrives late).
-let epoch = 0;
+  | { state: "connecting" | "connected"; port: chrome.runtime.Port; browser: BrowserLink | null; unanswered: Unanswered; sent: number };
 
-// The chat on screen: the stored chat, pi's history for it (null while it
-// loads), what pi sent since, and what waits in pi's queue. Replaced whole
-// when the chat changes.
-type Chat = { meta: SessionMeta; history: ChatMessage[] | null; live: ChatChunk[]; queue: QueuedMessage[] };
-let chat: Chat;
-
-// Text and images for the message box, held while no panel is open to take
-// them, in chrome.storage.local: Chrome may stop the worker meanwhile.
-const RETURNED = "returned";
+// Text and images for the message box.
 type Returned = { text: string; images?: ImageAttachment[] }[];
-// Kept across restarts and chat switches; the next `ready` refreshes it.
-let model: ModelState = { models: [] };
-let commands: PiCommand[] = [];
+
+// A chat and what its pi reported: the stored chat, pi's history for it
+// (null while it loads), what pi sent since, what waits in pi's queue, and
+// whether a run is going (for the chat list). `working`: the bridge's own
+// report that it has work left, which decides when an off-screen chat's pi
+// can stop.
+type Chat = {
+  meta: SessionMeta;
+  history: ChatMessage[] | null;
+  live: ChatChunk[];
+  queue: QueuedMessage[];
+  model: ModelState;
+  commands: PiCommand[];
+  running: boolean;
+  working: boolean;
+  connection: Connection;
+  starting: Promise<void> | null;
+};
+
+// The chat on screen.
+let chat: Chat;
+// Chats off screen that pi still works on. Leaving an idle chat stops its pi;
+// a chat that finishes off screen stops it then.
+const away = new Set<Chat>();
+
+// Text for the message box, held while no panel is open to take it, in
+// chrome.storage.local: Chrome may stop the worker meanwhile.
+const RETURNED = "returned";
+// Text a chat handed back while off screen, by chat id, until the user
+// comes back to it; in chrome.storage.local for the same reason.
+const RETURNED_TO = "returnedTo";
+type ReturnedTo = Record<string, Returned>;
+// The last model and commands pi reported, shown for a chat until its own pi
+// is up.
+let lastModel: ModelState = { models: [] };
+let lastCommands: PiCommand[] = [];
 const panels = new Set<chrome.runtime.Port>();
 
 // A new chat lives only in memory until its first message; then it's stored
@@ -63,7 +85,10 @@ function isDraft(meta: SessionMeta): boolean {
 }
 
 function opened(meta: SessionMeta): Chat {
-  return { meta, history: isDraft(meta) ? [] : null, live: [], queue: [] };
+  return {
+    meta, history: isDraft(meta) ? [] : null, live: [], queue: [], model: lastModel, commands: lastCommands,
+    running: false, working: false, connection: { state: "down" }, starting: null,
+  };
 }
 
 // The chat that's open, in chrome.storage.local, so a restarted worker
@@ -77,51 +102,86 @@ const ready: Promise<void> = (async () => {
   chat = opened(id === DRAFT_ID ? draft() : (saved ?? (await store.listSessions())[0] ?? draft()));
 })();
 
-// Keeps the same chat, under new metadata (it was stored, or got its file).
-function setMeta(meta: SessionMeta) {
-  chat.meta = meta;
-  void chrome.storage.local.set({ [CURRENT_CHAT]: meta.id });
+// Keeps chat `c`, under new metadata (it was stored, or got its file).
+function setMeta(c: Chat, meta: SessionMeta) {
+  c.meta = meta;
+  if (c === chat) void chrome.storage.local.set({ [CURRENT_CHAT]: meta.id });
 }
 
-function status(): PiStatus {
-  return connection.state === "down" ? "disconnected" : connection.state;
+function status(c: Chat): PiStatus {
+  return c.connection.state === "down" ? "disconnected" : c.connection.state;
 }
 
-function setConnection(next: Connection) {
-  connection = next;
-  broadcast({ kind: "status", status: status() });
+function setConnection(c: Chat, next: Connection) {
+  c.connection = next;
+  toScreen(c, { kind: "status", status: status(c) });
 }
 
 function broadcast(update: PanelUpdate) {
   for (const p of panels) postInParts(p, update);
 }
 
+// Shown only while `c` is on screen; a chat off screen is replayed when the
+// user comes back.
+function toScreen(c: Chat, update: PanelUpdate) {
+  if (c === chat) broadcast(update);
+}
+
 async function sessionsUpdate(): Promise<PanelUpdate> {
-  return { kind: "sessions", sessions: await store.listSessions(), currentId: chat.meta.id };
+  const running = [chat, ...away].filter((c) => c.running && !isDraft(c.meta)).map((c) => c.meta.id);
+  return { kind: "sessions", sessions: await store.listSessions(), currentId: chat.meta.id, running };
 }
 
 async function broadcastSessions() {
   broadcast(await sessionsUpdate());
 }
 
-function pushLive(chunk: ChatChunk) {
-  chat.live.push(chunk);
-  broadcast({ kind: "live", chunk });
+function pushLive(c: Chat, chunk: ChatChunk) {
+  c.live.push(chunk);
+  toScreen(c, { kind: "live", chunk });
 }
 
 function replay(): PanelUpdate {
-  return { kind: "replay", status: status(), session: chat.meta, history: chat.history, live: chat.live, queue: chat.queue, model, commands };
+  return { kind: "replay", status: status(chat), session: chat.meta, history: chat.history, live: chat.live, queue: chat.queue, model: chat.model, commands: chat.commands };
+}
+
+// `c`'s bridge has work left, or hasn't yet answered a message sent to it.
+// Only the bridge knows what it still has in hand (a run, a queue, input on
+// its way to pi, a compaction), so nothing here guesses from pi's events.
+function busy(c: Chat): boolean {
+  return c.working || (c.connection.state !== "down" && c.connection.unanswered.size > 0);
+}
+
+// A chat off screen that pi is done with stops its pi and is dropped.
+function settle(c: Chat) {
+  if (c === chat || busy(c)) return;
+  stop(c);
+  away.delete(c);
+}
+
+// Shuts `c`'s bridge down; what it hasn't answered is dropped.
+function stop(c: Chat) {
+  const old = c.connection;
+  c.connection = { state: "down" };
+  idle(c);
+  if (old.state === "down") return;
+  old.unanswered.clear();
+  void old.browser?.dispose();
+  old.port.disconnect();
 }
 
 // A connection is going away: what it hasn't answered goes back.
-function handBack(unanswered: Unanswered) {
-  giveBack([...unanswered.values()]);
+function handBack(c: Chat, unanswered: Unanswered) {
+  giveBack(c, [...unanswered.values()]);
   unanswered.clear();
 }
 
-// To the message box of the open panels, or the next one to open.
+// To the message box of the open panels, or the next one to open; text from
+// a chat off screen waits for that chat.
 let holding: Promise<void> = Promise.resolve();
-function giveBack(messages: Returned) {
+function giveBack(c: Chat, messages: Returned) {
+  if (!messages.length) return;
+  if (c !== chat) return holdFor(c.meta.id, messages);
   const restore = restoreOf(messages);
   if (!restore) return;
   if (panels.size) return broadcast({ kind: "restore", ...restore });
@@ -129,6 +189,29 @@ function giveBack(messages: Returned) {
     const { [RETURNED]: held = [] } = await chrome.storage.local.get(RETURNED);
     await chrome.storage.local.set({ [RETURNED]: [...(held as Returned), ...messages] });
   });
+}
+
+function holdFor(id: number, messages: Returned) {
+  holding = holding.then(async () => {
+    const { [RETURNED_TO]: held = {} } = await chrome.storage.local.get(RETURNED_TO);
+    const to = held as ReturnedTo;
+    await chrome.storage.local.set({ [RETURNED_TO]: { ...to, [id]: [...(to[id] ?? []), ...messages] } });
+  });
+}
+
+// What chat `id` handed back while off screen, out of storage: to its
+// message box if it's still on screen, else dropped (it was deleted).
+function takeHeldFor(id: number, deliver: boolean) {
+  holding = holding
+    .then(async () => {
+      const { [RETURNED_TO]: held = {} } = await chrome.storage.local.get(RETURNED_TO);
+      const { [id]: mine, ...rest } = held as ReturnedTo;
+      if (!mine || (deliver && chat.meta.id !== id)) return;
+      // Handed over now, while its chat is known to be on screen.
+      if (deliver) giveBack(chat, mine);
+      await chrome.storage.local.set({ [RETURNED_TO]: rest });
+    })
+    .catch(() => undefined);
 }
 
 // Hands what was held to panel `p`; it stays held unless `p` got it.
@@ -145,59 +228,84 @@ async function handOver(p: chrome.runtime.Port) {
   await holding;
 }
 
-function post(request: BridgeRequest) {
-  if (connection.state !== "down") postInParts(connection.port, request);
+// `c` is unset only before the worker has read which chat is open. The
+// bridge has work from the moment it's asked, before it says so.
+function post(c: Chat | undefined, request: BridgeRequest) {
+  if (!c || c.connection.state === "down") return;
+  c.working = true;
+  c.connection.sent++;
+  postInParts(c.connection.port, request);
 }
 
-async function onBridgeEvent(event: Exclude<BridgeEvent, { type: "browser_request" | "browser_cancel" }>) {
-  if ("epoch" in event && event.epoch !== epoch) return;
+// `c`'s pi is gone: nothing runs or waits any more.
+function idle(c: Chat) {
+  setRunning(c, false);
+  c.working = false;
+  c.queue = [];
+}
+
+function setRunning(c: Chat, running: boolean) {
+  if (c.running === running) return;
+  c.running = running;
+  void broadcastSessions();
+}
+
+async function onBridgeEvent(c: Chat, event: Exclude<BridgeEvent, { type: "browser_request" | "browser_cancel" }>) {
   switch (event.type) {
     case "prompt_result": {
-      if (connection.state === "down") break;
-      const sent = connection.unanswered.get(event.promptId);
-      connection.unanswered.delete(event.promptId);
+      if (c.connection.state === "down") break;
+      const sent = c.connection.unanswered.get(event.promptId);
+      c.connection.unanswered.delete(event.promptId);
       if (event.started) sent?.accept?.();
+      settle(c);
       break;
     }
     case "ready": {
       // The bridge reports the session pi is on; for a new chat that's the
       // first time Ardi learns its file.
-      const { meta } = chat;
+      const { meta } = c;
       if (event.sessionFile !== meta.piSessionFile) {
         meta.piSessionFile = event.sessionFile;
         if (!isDraft(meta)) await store.putSession(meta);
       }
-      // History is everything pi saved before this start or switch.
-      chat.history = event.history;
-      model = event.model;
-      commands = event.commands;
-      if (connection.state === "connecting") setConnection({ ...connection, state: "connected" });
-      broadcast(replay());
+      // History is everything pi saved before it started.
+      c.history = event.history;
+      c.model = lastModel = event.model;
+      c.commands = lastCommands = event.commands;
+      if (c.connection.state === "connecting") c.connection = { ...c.connection, state: "connected" };
+      toScreen(c, replay());
       break;
     }
+    case "busy":
+      // An idle report from before the latest request doesn't count.
+      c.working = event.busy || (c.connection.state !== "down" && event.requests < c.connection.sent);
+      settle(c);
+      break;
     case "history":
       // Only until pi's own `ready`.
-      if (chat.history) break;
-      chat.history = event.history;
-      broadcast(replay());
+      if (c.history) break;
+      c.history = event.history;
+      toScreen(c, replay());
       break;
     case "model":
-      model = event.model;
-      broadcast({ kind: "model", model });
+      c.model = lastModel = event.model;
+      toScreen(c, { kind: "model", model: c.model });
       break;
     case "chunk":
-      pushLive(event.chunk);
+      pushLive(c, event.chunk);
+      if (event.chunk.type === "run_start") setRunning(c, true);
+      if (event.chunk.type === "run_end") setRunning(c, false);
       break;
     case "queue":
-      chat.queue = event.queue;
-      broadcast({ kind: "queue", queue: chat.queue });
+      c.queue = event.queue;
+      toScreen(c, { kind: "queue", queue: c.queue });
       break;
     case "restore":
-      giveBack([event]);
+      giveBack(c, [event]);
       break;
     case "fatal":
-      pushLive({ type: "notice", content: event.message, level: "error" });
-      if (connection.state !== "down") handBack(connection.unanswered);
+      pushLive(c, { type: "notice", content: event.message, level: "error" });
+      if (c.connection.state !== "down") handBack(c, c.connection.unanswered);
       break;
     case "pi_check":
       // Only sent to settings' own one-shot port (settings.ts).
@@ -205,40 +313,51 @@ async function onBridgeEvent(event: Exclude<BridgeEvent, { type: "browser_reques
   }
 }
 
-// Connects and sends `start` in one go once settings are read, so a caller
-// that awaited it finds the connection up (or down for good) with `start`
-// already sent ahead of anything it posts. Calls meanwhile share it.
-let starting: Promise<void> | null = null;
-export function start(): Promise<void> {
-  starting ??= connect().finally(() => (starting = null));
-  return starting;
+// Connects `c`'s bridge and sends `start` in one go once settings are read,
+// so a caller that awaited it finds the connection up (or down for good)
+// with `start` already sent ahead of anything it posts. Calls meanwhile
+// share it.
+function startChat(c: Chat): Promise<void> {
+  c.starting ??= connect(c).finally(() => (c.starting = null));
+  return c.starting;
 }
 
-async function connect() {
+// Starts pi for the chat on screen.
+export async function start(): Promise<void> {
   await ready;
-  if (connection.state !== "down") return;
+  await startChat(chat);
+}
+
+async function connect(c: Chat) {
+  if (c.connection.state !== "down") return;
   const { piPath } = await loadSettings();
+  // Left while settings were read: no pi for a chat nobody tracks.
+  if (c !== chat && !away.has(c)) return;
   // What pi sent belongs to the pi that's gone.
-  chat = { ...chat, live: [], queue: [] };
+  c.live = [];
+  idle(c);
   const p = chrome.runtime.connectNative(target().nativeHost);
   const unanswered: Unanswered = new Map();
-  const isCurrent = () => connection.state !== "down" && connection.port === p;
+  const isCurrent = () => c.connection.state !== "down" && c.connection.port === p;
   // Replies go only to the port that asked, not a replacement.
   const link = target().connectBrowser?.((reply) => { if (isCurrent()) postInParts(p, reply); }) ?? null;
   p.onMessage.addListener(joinParts<BridgeEvent>((event) => {
     if (!isCurrent()) return;
     if (event.type === "browser_request" || event.type === "browser_cancel") return link?.receive(event);
-    void onBridgeEvent(event);
+    void onBridgeEvent(c, event);
   }));
   p.onDisconnect.addListener(() => {
     void link?.dispose();
     const err = chrome.runtime.lastError?.message;
     if (err) console.warn("pi bridge disconnected:", err);
-    handBack(unanswered);
-    if (isCurrent()) setConnection({ state: "down" });
+    handBack(c, unanswered);
+    if (!isCurrent()) return;
+    setConnection(c, { state: "down" });
+    idle(c);
+    settle(c);
   });
-  setConnection({ state: "connecting", port: p, browser: link, unanswered });
-  post({ type: "start", sessionFile: chat.meta.piSessionFile, piPath: piPath || undefined, epoch: ++epoch });
+  setConnection(c, { state: "connecting", port: p, browser: link, unanswered, sent: 0 });
+  post(c, { type: "start", sessionFile: c.meta.piSessionFile, piPath: piPath || undefined });
 }
 
 // What the panel and settings ask for runs one request at a time, in the
@@ -255,30 +374,37 @@ function inOrder<A extends unknown[]>(run: (...args: A) => unknown): (...args: A
   };
 }
 
-// Restarts the pi process; pi resumes the same session. Also applies
-// changed settings.
+// Restarts the chat on screen's pi; pi resumes the same session. Also
+// applies changed settings.
 export async function restart() {
-  const old = connection;
-  setConnection({ state: "down" });
+  await ready;
+  const c = chat;
+  const old = c.connection;
+  setConnection(c, { state: "down" });
+  idle(c);
   if (old.state !== "down") {
-    handBack(old.unanswered);
+    handBack(c, old.unanswered);
     await old.browser?.dispose();
     old.port.disconnect();
   }
-  await start();
+  await startChat(c);
 }
 
-// pi keeps running and switches session in place; `ready` brings the history.
-async function switchTo(next: SessionMeta) {
-  chat = opened(next);
+// Puts `next` on screen: back to its chat if pi still works on it, else a
+// fresh pi on its session. The chat left keeps its pi only while it's busy.
+async function switchTo(next: SessionMeta, { stopLeft = false } = {}) {
+  const left = chat;
+  const back = isDraft(next) ? undefined : [...away].find((c) => c.meta.id === next.id);
+  if (back) away.delete(back);
+  chat = back ?? opened(next);
   void chrome.storage.local.set({ [CURRENT_CHAT]: next.id });
   broadcast(replay());
-  // Labelled as it's sent, with nothing awaited in between: what pi still
-  // sends about the chat being left carries an older label, and a `start`
-  // sent meanwhile can't get a newer one.
-  const opening = connection.state !== "down" ? post({ type: "open", sessionFile: next.piSessionFile, epoch: ++epoch }) : start();
+  if (stopLeft) stop(left);
+  if (busy(left)) away.add(left);
+  else stop(left);
+  if (!isDraft(next)) takeHeldFor(next.id, true);
   await broadcastSessions();
-  await opening;
+  await startChat(chat);
 }
 
 export const newSession = inOrder(async () => {
@@ -295,32 +421,41 @@ export const switchSession = inOrder(async (id: number) => {
 export const deleteSession = inOrder(async (id: number) => {
   await ready;
   await store.deleteSession(id);
+  takeHeldFor(id, false);
+  for (const c of away) {
+    if (c.meta.id !== id) continue;
+    stop(c);
+    away.delete(c);
+  }
   if (id !== chat.meta.id) return broadcastSessions();
   const [latest] = await store.listSessions();
-  await switchTo(latest ?? draft());
+  await switchTo(latest ?? draft(), { stopLeft: true });
 });
 
 export const prompt = inOrder(async (text: string, images?: ImageAttachment[], steer = false) => {
-  await start();
-  const origin = connection;
+  await ready;
+  // The chat it was sent from, even if the user moves on meanwhile.
+  const c = chat;
+  await startChat(c);
+  const origin = c.connection;
   const accept = origin.state !== "down" ? origin.browser?.preparePrompt() : undefined;
-  const current = chat.meta;
+  const current = c.meta;
   current.updatedAt = Date.now();
   if (isDraft(current)) {
     // First message: the chat becomes real and joins the list.
     const { id: _, ...meta } = current;
     const stored = await store.addSession({ ...meta, title: plainMentions(text).slice(0, TITLE_LEN) });
     // `ready` can name the session file while the chat is being stored.
-    setMeta({ ...stored, piSessionFile: current.piSessionFile });
-    if (chat.meta.piSessionFile !== stored.piSessionFile) await store.putSession(chat.meta);
+    setMeta(c, { ...stored, piSessionFile: current.piSessionFile });
+    if (c.meta.piSessionFile !== stored.piSessionFile) await store.putSession(c.meta);
     queueMicrotask(() => void broadcastSessions());
   } else {
     await store.putSession(current);
   }
   // The bridge may have gone away while storing; then a new one starts.
-  await start();
-  const sentTo = connection;
-  if (sentTo.state === "down") return giveBack([{ text, images }]);
+  await startChat(c);
+  const sentTo = c.connection;
+  if (sentTo.state === "down") return giveBack(c, [{ text, images }]);
   // A restart during storage writes must not drop the message. Permission
   // callbacks belong to their original controller, not the replacement port.
   const promptId = crypto.randomUUID();
@@ -328,28 +463,29 @@ export const prompt = inOrder(async (text: string, images?: ImageAttachment[], s
   // The chat shows it once pi starts it (a `user` chunk).
   const request: Extract<BridgeRequest, { type: "prompt" }> = { type: "prompt", text, images, promptId };
   if (steer) request.steer = true;
+  sentTo.sent++;
   postInParts(sentTo.port, request);
 });
 
 export function queueAction({ action, index, text }: QueueAction) {
-  post({ type: "queue_action", action, index, text });
+  post(chat, { type: "queue_action", action, index, text });
 }
 
 export function abort() {
-  if (connection.state !== "down") connection.browser?.cancel();
-  post({ type: "abort" });
+  if (chat?.connection.state === "connecting" || chat?.connection.state === "connected") chat.connection.browser?.cancel();
+  post(chat, { type: "abort" });
 }
 
 export const compact = inOrder(() => {
-  post({ type: "compact" });
+  post(chat, { type: "compact" });
 });
 
 export const setModel = inOrder((provider: string, modelId: string) => {
-  post({ type: "set_model", provider, modelId });
+  post(chat, { type: "set_model", provider, modelId });
 });
 
 export const setThinkingLevel = inOrder((level: ThinkingLevel) => {
-  post({ type: "set_thinking_level", level });
+  post(chat, { type: "set_thinking_level", level });
 });
 
 export async function attachPanel(p: chrome.runtime.Port) {

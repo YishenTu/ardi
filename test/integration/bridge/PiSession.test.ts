@@ -7,7 +7,6 @@ import { FAKE_PI } from "../../support/executables";
 import { waitFor } from "../../support/wait";
 import { PiSession } from "../../../src/bridge/PiSession";
 import type { BridgeEvent } from "../../../src/bridge/protocol";
-import { readPiHistory } from "../../../src/bridge/history/piHistory";
 
 type Ready = Extract<BridgeEvent, { type: "ready" }>;
 
@@ -30,7 +29,7 @@ function startSession(sessionFile?: string): PiSession {
   // Each session reports into its own list, so a finished one can't leak in.
   const own: BridgeEvent[] = (events = []);
   session = new PiSession({ extension: "/agent/extension", tools: [] }, (event) => own.push(event));
-  session.start(sessionFile, 1, FAKE_PI);
+  session.start(sessionFile, FAKE_PI);
   return session;
 }
 
@@ -42,6 +41,10 @@ const ready = (n: number) =>
     return readies()[n];
   });
 const chunks = () => events.flatMap((e) => (e.type === "chunk" ? [e.chunk] : []));
+// Each busy report: pi working or input waiting (true), or nothing left (false).
+const busy = () => events.flatMap((e) => (e.type === "busy" ? [e.busy] : []));
+// Everything else the session sent, in order.
+const reported = () => events.filter((e) => e.type !== "busy");
 
 // Starts pi, sends one prompt and waits for the reply; returns the saved session file.
 async function chatOnce(text: string): Promise<string> {
@@ -67,7 +70,7 @@ describe("PiSession", () => {
     void startSession().prompt("hello");
     await waitFor(() => expect(chunks().at(-1)?.type).toBe("run_end"));
     // Nothing reaches pi before it's on the right session.
-    expect(events[0].type).toBe("ready");
+    expect(reported()[0].type).toBe("ready");
     expect(chunks()).toEqual([
       { type: "run_start", at: expect.any(Number) },
       { type: "user", text: "hello", at: expect.any(Number) },
@@ -101,7 +104,7 @@ describe("PiSession", () => {
     const file = await chatOnce("remember me");
     startSession(file);
     await ready(0);
-    const [first] = events;
+    const [first] = reported();
     expect(first).toMatchObject({ type: "history", sessionFile: file, history: [{ role: "user", content: "remember me" }, { role: "assistant" }] });
   });
 
@@ -112,44 +115,29 @@ describe("PiSession", () => {
     expect(events.some((e) => e.type === "fatal")).toBe(false);
   });
 
-  test("a chat switch that arrives with the start waits for it instead of starting a second pi", async () => {
-    startSession();
-    session.open(undefined, 2);
-    await ready(1);
-    expect(readies().map((e) => e.epoch)).toEqual([1, 2]);
+  test("reports pi busy from the first message until its run settles, without a gap", async () => {
+    void startSession().prompt("hi");
+    await waitFor(() => expect(chunks().at(-1)?.type).toBe("run_end"));
+    await waitFor(() => expect(busy()).toEqual([true, false]));
+    // Idle comes after the run's end, so the extension sees the end before stopping it.
+    const end = events.findIndex((e) => e.type === "chunk" && e.chunk.type === "run_end");
+    expect(events.findLastIndex((e) => e.type === "busy")).toBeGreaterThan(end);
   });
 
-  test("open moves the running pi to another chat, or to a new one", async () => {
-    const saved = await chatOnce("first chat");
+  test("a compaction counts as busy until pi answers it", async () => {
     startSession();
     await ready(0);
-
-    session.open(saved, 2);
-    const switched = await ready(1);
-    expect(switched).toMatchObject({ sessionFile: saved, epoch: 2 });
-    expect(switched.history).toHaveLength(2);
-
-    session.open(undefined, 3);
-    const fresh = await ready(2);
-    expect(fresh.sessionFile).not.toBe(saved);
-    expect(fresh).toMatchObject({ history: [], epoch: 3 });
-  });
-
-  test("what pi reports is labelled with the open that put pi on its session; a stopped run's last output keeps the old label", async () => {
-    void startSession().prompt("hold");
-    await waitFor(() => expect(chunks()).toContainEqual({ type: "text", content: "echo: hold" }));
-    session.open(undefined, 2);
-    await ready(1);
-    const runEnd = events.find((e) => e.type === "chunk" && e.chunk.type === "run_end");
-    expect(runEnd).toMatchObject({ epoch: 1, chunk: { interrupted: true } });
-    expect(readies().map((e) => e.epoch)).toEqual([1, 2]);
+    await waitFor(() => expect(busy().at(-1)).toBe(false));
+    const before = busy().length;
+    await session.compact();
+    await waitFor(() => expect(busy().slice(before)).toEqual([true, false]));
   });
 
   test("model changes report what pi settled on", async () => {
     startSession();
     await ready(0);
     await session.setModel("fake", "m2");
-    expect(events.at(-1)).toMatchObject({ type: "model", model: { current: { provider: "fake", id: "m2" }, thinkingLevel: "off" } });
+    expect(reported().at(-1)).toMatchObject({ type: "model", model: { current: { provider: "fake", id: "m2" }, thinkingLevel: "off" } });
   });
 
   test("stops with a fatal error if pi isn't on the requested session", async () => {
@@ -301,6 +289,8 @@ describe("messages sent while pi works", () => {
     await waitFor(() => expect(delivered()).toEqual(["b", "a"]));
     await waitFor(() => expect(chunks().at(-1)?.type).toBe("run_end"));
     expect(deliveredImages()).toEqual([undefined, "QQ=="]);
+    // Never idle while the messages were on their way back to pi.
+    await waitFor(() => expect(busy()).toEqual([true, false]));
   });
 
   test("equal texts keep their own images when sent again", async () => {
@@ -358,15 +348,5 @@ describe("what the chat shows", () => {
     await session.prompt("reject:busy");
     expect(events).toContainEqual({ type: "restore", text: "reject:busy" });
     expect(users()).toEqual([]);
-  });
-
-  test("a message sent before a chat switch goes to the chat it was sent from", async () => {
-    startSession();
-    const first = await ready(0);
-    void session.prompt("one");
-    void session.prompt("two");
-    session.open(undefined, 2);
-    await ready(1);
-    await waitFor(async () => expect((await readPiHistory(first.sessionFile!)).filter((m) => m.role === "user").map((m) => m.role === "user" && m.content)).toEqual(["one", "two"]));
   });
 });

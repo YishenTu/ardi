@@ -20,7 +20,7 @@ type Listener = {
   // Messages taken back (a stop, an edit, rejected or never answered).
   restore: (text: string, images?: ImageAttachment[]) => void;
   status: (s: PiStatus) => void;
-  sessions: (sessions: SessionMeta[], currentId: number) => void;
+  sessions: (sessions: SessionMeta[], currentId: number, running: number[]) => void;
 };
 
 // Talks to the pi session in the background service worker. The session
@@ -70,7 +70,7 @@ export class PiClient {
           this.on.live(u.chunk);
           break;
         case "sessions":
-          this.on.sessions(u.sessions, u.currentId);
+          this.on.sessions(u.sessions, u.currentId, u.running);
           break;
       }
     }));

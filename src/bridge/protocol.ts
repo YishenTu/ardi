@@ -17,14 +17,11 @@ export type BrowserRelayEvent =
 export type BridgeRequest =
   | BrowserReply
   // Starts pi (`piPath`, or the installed pi). Resumes `sessionFile` if it
-  // exists; otherwise pi starts a new session. `epoch` (also on `open`)
-  // labels the events about the session it puts pi on (`SessionEvent`), so
-  // the extension can tell them from those about a session it left.
-  | { type: "start"; sessionFile?: string; piPath?: string; epoch: number }
+  // exists; otherwise pi starts a new session. A bridge's pi stays on that
+  // session for life: each chat has its own bridge.
+  | { type: "start"; sessionFile?: string; piPath?: string }
   // Runs `pi --version` without starting pi. Answered with `pi_check`.
   | { type: "check_pi"; piPath?: string }
-  // Moves the running pi to `sessionFile` if it exists, otherwise to a new session. Answered with `ready`.
-  | { type: "open"; sessionFile?: string; epoch: number }
   // pi starts a run with it, or while it works queues it: to take after its
   // current step (`steer`) or once done. The chat shows it as a `user` chunk
   // once pi starts it; if pi rejects it, it comes back as `restore`.
@@ -40,26 +37,30 @@ export type BridgeRequest =
 // Which pi a path leads to: the command run and its version, or why it failed.
 export type PiCheck = { command: string; version?: string; error?: string };
 
-// Bridge -> extension: what pi reports about the session it's on. Sent as a
-// SessionEvent, labelled with the epoch of the `start` or `open` that put
-// pi on that session.
+// Bridge -> extension: what pi reports about the session it's on.
 export type SessionUpdate =
-  // A saved session's history, read from its file as soon as `start` or
-  // `open` asks for it, so the chat shows while pi starts or switches.
+  // A saved session's history, read from its file as soon as `start` asks
+  // for it, so the chat shows while pi starts.
   | { type: "history"; sessionFile: string; history: ChatMessage[] }
-  // pi is up, or switched session: the session file pi is on, and its history so far.
+  // pi is up: the session file it's on, and its history so far.
   | { type: "ready"; sessionFile?: string; history: ChatMessage[]; model: ModelState; commands: PiCommand[] }
   // The model or thinking level changed.
   | { type: "model"; model: ModelState }
   | { type: "chunk"; chunk: ChatChunk }
   // The messages waiting for pi, steering first.
   | { type: "queue"; queue: QueuedMessage[] };
-export type SessionEvent = SessionUpdate & { epoch: number };
 
 // Bridge -> extension.
 export type BridgeEvent =
-  | SessionEvent
+  | SessionUpdate
   | { type: "prompt_result"; promptId: string; started: boolean }
+  // Whether the bridge has work left: a run, a queue, input on its way to pi
+  // or a compaction. Sent on change, after the events that work produced
+  // (`prompt_result`, `restore`). `requests`: how many requests other than
+  // `browser_reply` and `check_pi` it had received, so the extension can
+  // tell an idle report from before its latest request. The extension stops
+  // a chat off screen only once it's idle with every request counted.
+  | { type: "busy"; busy: boolean; requests: number }
   | BrowserRelayEvent
   // Messages taken back (a stop, an edit, or rejected by pi), for the message box.
   | { type: "restore"; text: string; images?: ImageAttachment[] }

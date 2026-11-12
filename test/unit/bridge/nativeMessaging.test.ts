@@ -67,7 +67,7 @@ describe("sendToExtension", () => {
 
   test("keeps events in order when big and small ones mix", () => {
     const big: BridgeEvent = { type: "fatal", message: "x".repeat(600_000) };
-    const small: BridgeEvent = { type: "chunk", chunk: { type: "text", content: "hi" }, epoch: 1 };
+    const small: BridgeEvent = { type: "chunk", chunk: { type: "text", content: "hi" } };
     sendToExtension(small);
     sendToExtension(big);
     sendToExtension(small);

@@ -81,14 +81,6 @@ function handle(command: Record<string, any>): unknown {
       return { commands: [{ name: "skill:demo", description: "A demo skill", source: "skill" }] };
     case "get_state":
       return { sessionFile: process.env.FAKE_PI_WRONG_SESSION ? join(sessionsDir, "other.jsonl") : sessionFile, model, thinkingLevel };
-    case "switch_session":
-      sessionFile = command.sessionPath;
-      lastId = null;
-      return { cancelled: false };
-    case "new_session":
-      sessionFile = newSessionFile();
-      lastId = null;
-      return { cancelled: false };
     case "set_model":
       model = { provider: command.provider, id: command.modelId };
       thinkingLevel = command.modelId === "m2" ? "off" : thinkingLevel;
