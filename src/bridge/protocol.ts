@@ -57,7 +57,7 @@ export type BridgeEvent =
   // Whether the bridge has work left: a run, a queue, input on its way to pi
   // or a compaction. Sent on change, after the events that work produced
   // (`prompt_result`, `restore`). `requests`: how many requests other than
-  // `browser_reply` and `check_pi` it had received, so the extension can
+  // `browser_reply` it had received, so the extension can
   // tell an idle report from before its latest request. The extension stops
   // a chat off screen only once it's idle with every request counted.
   | { type: "busy"; busy: boolean; requests: number }

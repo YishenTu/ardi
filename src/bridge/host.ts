@@ -36,7 +36,7 @@ export async function runBridge(target: BridgeTarget): Promise<void> {
 
   onExtensionMessage(
     joinParts<BridgeRequest>((request) => {
-      if (request.type !== "browser_reply" && request.type !== "check_pi") session.received();
+      if (request.type !== "browser_reply") session.received();
       switch (request.type) {
         case "browser_reply":
           return relay?.reply(request);

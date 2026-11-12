@@ -25,20 +25,29 @@ const TITLE_LEN = 60;
 type Unanswered = Map<string, { text: string; images?: ImageAttachment[]; accept?: () => void }>;
 
 // A chat's bridge connection: down, or a port (with the target's browser
-// link for it, what it hasn't answered, and how many requests were sent on
-// it) that is connecting until the bridge reports pi ready.
+// link for it, and what it hasn't answered) that is connecting until the
+// bridge reports pi ready. `sent` counts requests posted on it; the bridge's
+// latest `busy` report gives `acked` (how many it had received) and
+// `reportedBusy`. It has work while it reports busy or hasn't yet reported
+// on everything sent.
 type Connection =
   | { state: "down" }
-  | { state: "connecting" | "connected"; port: chrome.runtime.Port; browser: BrowserLink | null; unanswered: Unanswered; sent: number };
+  | {
+      state: "connecting" | "connected";
+      port: chrome.runtime.Port;
+      browser: BrowserLink | null;
+      unanswered: Unanswered;
+      sent: number;
+      acked: number;
+      reportedBusy: boolean;
+    };
 
 // Text and images for the message box.
 type Returned = { text: string; images?: ImageAttachment[] }[];
 
 // A chat and what its pi reported: the stored chat, pi's history for it
 // (null while it loads), what pi sent since, what waits in pi's queue, and
-// whether a run is going (for the chat list). `working`: the bridge's own
-// report that it has work left, which decides when an off-screen chat's pi
-// can stop.
+// whether a run is going (for the chat list).
 type Chat = {
   meta: SessionMeta;
   history: ChatMessage[] | null;
@@ -47,7 +56,6 @@ type Chat = {
   model: ModelState;
   commands: PiCommand[];
   running: boolean;
-  working: boolean;
   connection: Connection;
   starting: Promise<void> | null;
 };
@@ -58,13 +66,11 @@ let chat: Chat;
 // a chat that finishes off screen stops it then.
 const away = new Set<Chat>();
 
-// Text for the message box, held while no panel is open to take it, in
+// Text for a chat's message box that no panel showing that chat could take
+// (none open, or the chat is off screen), by chat id, until one can. In
 // chrome.storage.local: Chrome may stop the worker meanwhile.
-const RETURNED = "returned";
-// Text a chat handed back while off screen, by chat id, until the user
-// comes back to it; in chrome.storage.local for the same reason.
-const RETURNED_TO = "returnedTo";
-type ReturnedTo = Record<string, Returned>;
+const HELD = "held";
+type Held = Record<string, Returned>;
 // The last model and commands pi reported, shown for a chat until its own pi
 // is up.
 let lastModel: ModelState = { models: [] };
@@ -87,7 +93,7 @@ function isDraft(meta: SessionMeta): boolean {
 function opened(meta: SessionMeta): Chat {
   return {
     meta, history: isDraft(meta) ? [] : null, live: [], queue: [], model: lastModel, commands: lastCommands,
-    running: false, working: false, connection: { state: "down" }, starting: null,
+    running: false, connection: { state: "down" }, starting: null,
   };
 }
 
@@ -145,11 +151,12 @@ function replay(): PanelUpdate {
   return { kind: "replay", status: status(chat), session: chat.meta, history: chat.history, live: chat.live, queue: chat.queue, model: chat.model, commands: chat.commands };
 }
 
-// `c`'s bridge has work left, or hasn't yet answered a message sent to it.
-// Only the bridge knows what it still has in hand (a run, a queue, input on
-// its way to pi, a compaction), so nothing here guesses from pi's events.
+// `c`'s bridge has work left. Only the bridge knows what it has in hand (a
+// run, a queue, input on its way to pi, a compaction), so nothing here
+// guesses from pi's events; what it hasn't reported on yet counts as work.
 function busy(c: Chat): boolean {
-  return c.working || (c.connection.state !== "down" && c.connection.unanswered.size > 0);
+  const conn = c.connection;
+  return conn.state !== "down" && (conn.reportedBusy || conn.acked < conn.sent);
 }
 
 // A chat off screen that pi is done with stops its pi and is dropped.
@@ -159,89 +166,76 @@ function settle(c: Chat) {
   away.delete(c);
 }
 
-// Shuts `c`'s bridge down; what it hasn't answered is dropped.
+// Shuts `c`'s bridge down, dropping what it hasn't answered.
 function stop(c: Chat) {
+  void closeConnection(c, "drop");
+}
+
+// Takes `c`'s bridge down: nothing runs or waits any more, what it hasn't
+// answered goes back to the message box or is dropped, and its browser link
+// is disposed (the returned promise).
+function closeConnection(c: Chat, unanswered: "hand back" | "drop"): Promise<void> {
   const old = c.connection;
-  c.connection = { state: "down" };
-  idle(c);
-  if (old.state === "down") return;
+  setConnection(c, { state: "down" });
+  setRunning(c, false);
+  c.queue = [];
+  if (old.state === "down") return Promise.resolve();
+  if (unanswered === "hand back") giveBack(c, [...old.unanswered.values()]);
   old.unanswered.clear();
-  void old.browser?.dispose();
+  const disposed = old.browser?.dispose() ?? Promise.resolve();
   old.port.disconnect();
+  return disposed;
 }
 
-// A connection is going away: what it hasn't answered goes back.
-function handBack(c: Chat, unanswered: Unanswered) {
-  giveBack(c, [...unanswered.values()]);
-  unanswered.clear();
-}
-
-// To the message box of the open panels, or the next one to open; text from
-// a chat off screen waits for that chat.
+// To the message box of the open panels if `c` is on screen; else held
+// for `c` until a panel shows it.
 let holding: Promise<void> = Promise.resolve();
 function giveBack(c: Chat, messages: Returned) {
   if (!messages.length) return;
-  if (c !== chat) return holdFor(c.meta.id, messages);
   const restore = restoreOf(messages);
-  if (!restore) return;
-  if (panels.size) return broadcast({ kind: "restore", ...restore });
+  if (c === chat && panels.size && restore) return broadcast({ kind: "restore", ...restore });
+  const id = c.meta.id;
   holding = holding.then(async () => {
-    const { [RETURNED]: held = [] } = await chrome.storage.local.get(RETURNED);
-    await chrome.storage.local.set({ [RETURNED]: [...(held as Returned), ...messages] });
+    const { [HELD]: held = {} } = await chrome.storage.local.get(HELD);
+    const all = held as Held;
+    await chrome.storage.local.set({ [HELD]: { ...all, [id]: [...(all[id] ?? []), ...messages] } });
   });
 }
 
-function holdFor(id: number, messages: Returned) {
-  holding = holding.then(async () => {
-    const { [RETURNED_TO]: held = {} } = await chrome.storage.local.get(RETURNED_TO);
-    const to = held as ReturnedTo;
-    await chrome.storage.local.set({ [RETURNED_TO]: { ...to, [id]: [...(to[id] ?? []), ...messages] } });
-  });
-}
-
-// What chat `id` handed back while off screen, out of storage: to its
-// message box if it's still on screen, else dropped (it was deleted).
-function takeHeldFor(id: number, deliver: boolean) {
+// Hands what's held for the chat on screen to panel `to`, or to every open
+// panel. It's handed over before it's cleared from storage, while that chat is
+// known to be on screen, and stays held if no panel took it.
+function handOver(to?: chrome.runtime.Port): Promise<void> {
   holding = holding
     .then(async () => {
-      const { [RETURNED_TO]: held = {} } = await chrome.storage.local.get(RETURNED_TO);
-      const { [id]: mine, ...rest } = held as ReturnedTo;
-      if (!mine || (deliver && chat.meta.id !== id)) return;
-      // Handed over now, while its chat is known to be on screen.
-      if (deliver) giveBack(chat, mine);
-      await chrome.storage.local.set({ [RETURNED_TO]: rest });
+      const { [HELD]: held = {} } = await chrome.storage.local.get(HELD);
+      const { [chat.meta.id]: mine, ...rest } = held as Held;
+      const restore = mine && restoreOf(mine);
+      const ports = to ? [to].filter((p) => panels.has(p)) : [...panels];
+      if (!restore || !ports.length) return;
+      for (const p of ports) postInParts(p, { kind: "restore", ...restore });
+      await chrome.storage.local.set({ [HELD]: rest });
+    })
+    .catch(() => undefined);
+  return holding;
+}
+
+// Drops what's held for a deleted chat.
+function dropHeld(id: number) {
+  holding = holding
+    .then(async () => {
+      const { [HELD]: held = {} } = await chrome.storage.local.get(HELD);
+      const { [id]: _, ...rest } = held as Held;
+      await chrome.storage.local.set({ [HELD]: rest });
     })
     .catch(() => undefined);
 }
 
-// Hands what was held to panel `p`; it stays held unless `p` got it.
-async function handOver(p: chrome.runtime.Port) {
-  holding = holding
-    .then(async () => {
-      const { [RETURNED]: held = [] } = await chrome.storage.local.get(RETURNED);
-      const restore = restoreOf(held as Returned);
-      if (!restore || !panels.has(p)) return;
-      postInParts(p, { kind: "restore", ...restore });
-      await chrome.storage.local.set({ [RETURNED]: [] });
-    })
-    .catch(() => undefined);
-  await holding;
-}
-
-// `c` is unset only before the worker has read which chat is open. The
-// bridge has work from the moment it's asked, before it says so.
+// `c` is unset only before the worker has read which chat is open.
 function post(c: Chat | undefined, request: BridgeRequest) {
   if (!c || c.connection.state === "down") return;
-  c.working = true;
   c.connection.sent++;
   postInParts(c.connection.port, request);
-}
-
-// `c`'s pi is gone: nothing runs or waits any more.
-function idle(c: Chat) {
-  setRunning(c, false);
-  c.working = false;
-  c.queue = [];
 }
 
 function setRunning(c: Chat, running: boolean) {
@@ -257,7 +251,6 @@ async function onBridgeEvent(c: Chat, event: Exclude<BridgeEvent, { type: "brows
       const sent = c.connection.unanswered.get(event.promptId);
       c.connection.unanswered.delete(event.promptId);
       if (event.started) sent?.accept?.();
-      settle(c);
       break;
     }
     case "ready": {
@@ -272,13 +265,14 @@ async function onBridgeEvent(c: Chat, event: Exclude<BridgeEvent, { type: "brows
       c.history = event.history;
       c.model = lastModel = event.model;
       c.commands = lastCommands = event.commands;
-      if (c.connection.state === "connecting") c.connection = { ...c.connection, state: "connected" };
+      if (c.connection.state === "connecting") c.connection.state = "connected";
       toScreen(c, replay());
       break;
     }
     case "busy":
-      // An idle report from before the latest request doesn't count.
-      c.working = event.busy || (c.connection.state !== "down" && event.requests < c.connection.sent);
+      if (c.connection.state === "down") break;
+      c.connection.reportedBusy = event.busy;
+      c.connection.acked = event.requests;
       settle(c);
       break;
     case "history":
@@ -305,7 +299,10 @@ async function onBridgeEvent(c: Chat, event: Exclude<BridgeEvent, { type: "brows
       break;
     case "fatal":
       pushLive(c, { type: "notice", content: event.message, level: "error" });
-      if (c.connection.state !== "down") handBack(c, c.connection.unanswered);
+      if (c.connection.state !== "down") {
+        giveBack(c, [...c.connection.unanswered.values()]);
+        c.connection.unanswered.clear();
+      }
       break;
     case "pi_check":
       // Only sent to settings' own one-shot port (settings.ts).
@@ -335,7 +332,8 @@ async function connect(c: Chat) {
   if (c !== chat && !away.has(c)) return;
   // What pi sent belongs to the pi that's gone.
   c.live = [];
-  idle(c);
+  setRunning(c, false);
+  c.queue = [];
   const p = chrome.runtime.connectNative(target().nativeHost);
   const unanswered: Unanswered = new Map();
   const isCurrent = () => c.connection.state !== "down" && c.connection.port === p;
@@ -347,16 +345,14 @@ async function connect(c: Chat) {
     void onBridgeEvent(c, event);
   }));
   p.onDisconnect.addListener(() => {
-    void link?.dispose();
     const err = chrome.runtime.lastError?.message;
     if (err) console.warn("pi bridge disconnected:", err);
-    handBack(c, unanswered);
-    if (!isCurrent()) return;
-    setConnection(c, { state: "down" });
-    idle(c);
+    // Replaced or stopped already: that took care of what it hadn't answered.
+    if (!isCurrent()) return void link?.dispose();
+    void closeConnection(c, "hand back");
     settle(c);
   });
-  setConnection(c, { state: "connecting", port: p, browser: link, unanswered, sent: 0 });
+  setConnection(c, { state: "connecting", port: p, browser: link, unanswered, sent: 0, acked: 0, reportedBusy: false });
   post(c, { type: "start", sessionFile: c.meta.piSessionFile, piPath: piPath || undefined });
 }
 
@@ -379,14 +375,7 @@ function inOrder<A extends unknown[]>(run: (...args: A) => unknown): (...args: A
 export async function restart() {
   await ready;
   const c = chat;
-  const old = c.connection;
-  setConnection(c, { state: "down" });
-  idle(c);
-  if (old.state !== "down") {
-    handBack(c, old.unanswered);
-    await old.browser?.dispose();
-    old.port.disconnect();
-  }
+  await closeConnection(c, "hand back");
   await startChat(c);
 }
 
@@ -402,7 +391,7 @@ async function switchTo(next: SessionMeta, { stopLeft = false } = {}) {
   if (stopLeft) stop(left);
   if (busy(left)) away.add(left);
   else stop(left);
-  if (!isDraft(next)) takeHeldFor(next.id, true);
+  void handOver();
   await broadcastSessions();
   await startChat(chat);
 }
@@ -421,7 +410,7 @@ export const switchSession = inOrder(async (id: number) => {
 export const deleteSession = inOrder(async (id: number) => {
   await ready;
   await store.deleteSession(id);
-  takeHeldFor(id, false);
+  dropHeld(id);
   for (const c of away) {
     if (c.meta.id !== id) continue;
     stop(c);

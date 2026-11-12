@@ -308,12 +308,13 @@ describe("background pi session", () => {
     await pi.prompt("keep me");
     panel.close();
     fromBridge({ type: "fatal", message: "pi not found" });
-    await waitFor(() => expect(chromeFake.storage.get("returned")).toEqual([{ text: "keep me" }]));
+    const { id } = (await store.listSessions())[0];
+    await waitFor(() => expect(chromeFake.storage.get("held")).toEqual({ [id]: [{ text: "keep me" }] }));
     // The panel closes while the held text is read from storage.
     const brief = new FakePort("panel");
     const read = chromeFake.storage.get.bind(chromeFake.storage);
     const reading = spyOn(chromeFake.storage, "get").mockImplementation((key: string) => {
-      if (key === "returned") brief.close();
+      if (key === "held") brief.close();
       return read(key);
     });
     try {
@@ -555,7 +556,7 @@ describe("background pi session", () => {
       const write = chrome.storage.local.set.bind(chrome.storage.local);
       // The user opens a new chat while the held text is being cleared.
       const moving = spyOn(chrome.storage.local, "set").mockImplementation(async (items: Record<string, unknown>) => {
-        if (JSON.stringify(items) === '{"returnedTo":{}}') await pi.newSession();
+        if (JSON.stringify(items) === '{"held":{}}') await pi.newSession();
         return write(items);
       });
       try {

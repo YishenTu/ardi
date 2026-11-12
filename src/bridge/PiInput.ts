@@ -115,7 +115,9 @@ export class PiInput {
     });
   }
 
-  observe(event: Record<string, unknown>): void {
+  // Follows a pi event; `chunks` emits what the chat shows for it. Busy is
+  // reported after them, so idle never comes before the run's end.
+  observe(event: Record<string, unknown>, chunks: () => void = () => {}): void {
     if (event.type === "agent_start") this.running = true;
     if (event.type === "queue_update") this.emit({ type: "queue", queue: this.queue.update(strings(event.steering), strings(event.followUp)) });
     // pi takes everything queued before it settles; anything left came in
@@ -130,11 +132,12 @@ export class PiInput {
       });
     }
     if (event.type === "agent_settled") this.running = false;
+    chunks();
+    this.report();
   }
 
-  // Tells the extension when work starts or runs out. The session calls it
-  // after each pi event's chunks, so idle never comes before the run's end.
-  report(): void {
+  // Tells the extension when work starts or runs out.
+  private report(): void {
     const busy = this.running || this.pending > 0 || this.tracked > 0 || this.queue.list.length > 0;
     if (busy === this.busy) return;
     this.busy = busy;

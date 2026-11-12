@@ -53,7 +53,7 @@ export class PiSession {
     this.input.exclusive(() => this.launch(sessionFile, piPath)).catch((error: unknown) => this.fail(error));
   }
 
-  // The extension sent a request that makes work; counted in `busy` reports.
+  // The extension sent a request; counted in `busy` reports.
   received(): void {
     this.input.received();
   }
@@ -123,11 +123,11 @@ export class PiSession {
     const transport = new PiRPCTransport({ input: proc.stdout, output: proc.stdin });
     proc.onClose((error) => this.fail(error ?? new Error("pi exited"), proc.stderrSnapshot));
     const normalization = createPiEventNormalizationState();
-    transport.onEvent((event) => {
-      this.input.observe(event);
-      for (const chunk of normalizePiRPCEvent(event, normalization)) this.send({ type: "chunk", chunk });
-      this.input.report();
-    });
+    transport.onEvent((event) =>
+      this.input.observe(event, () => {
+        for (const chunk of normalizePiRPCEvent(event, normalization)) this.send({ type: "chunk", chunk });
+      }),
+    );
     transport.start();
     this.phase = { state: "running", process: proc, transport };
 

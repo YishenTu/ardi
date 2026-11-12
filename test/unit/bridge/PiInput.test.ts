@@ -21,9 +21,7 @@ test("a run that starts and settles before pi's answer to its prompt is read lea
   answer({ disposition: "started" });
   input.observe({ type: "agent_start" });
   input.observe({ type: "agent_settled", aborted: false });
-  input.report();
   await sending;
-  input.report();
   expect(events.filter((e) => e.type === "busy").at(-1)).toMatchObject({ type: "busy", busy: false });
 });
 
@@ -37,13 +35,11 @@ test("a stop stays busy until it has handed pi's queue back, even when the run s
   input.connect(transport);
   input.observe({ type: "agent_start" });
   input.observe({ type: "queue_update", steering: [], followUp: ["first"] });
-  input.report();
   const stopping = input.stop();
   await Promise.resolve();
   // pi ends the run before it answers clear_queue.
   input.observe({ type: "queue_update", steering: [], followUp: [] });
   input.observe({ type: "agent_settled", aborted: true });
-  input.report();
   expect(events).not.toContainEqual({ type: "busy", busy: false });
   cleared({ steering: [], followUp: ["first"] });
   await stopping;

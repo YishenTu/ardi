@@ -55,8 +55,8 @@ test("reads framed requests however stdin splits them, answers in frames, and st
   bridge.stdin.write(Buffer.concat([frame({ type: "check_pi", piPath: FAKE_PI }), frame({ type: "prompt", text: "hi" })]));
   await waitFor(() => expect(events).toContainEqual({ type: "pi_check", command: FAKE_PI, version: "0.0.0-fake" }), 10_000);
   await waitFor(() => expect(events).toContainEqual({ type: "chunk", chunk: { type: "text", content: "echo: hi" } }), 10_000);
-  // Idle once done, counting the requests that make work (start and prompt; not the Pi check).
-  await waitFor(() => expect(events.findLast((e) => e.type === "busy")).toEqual({ type: "busy", busy: false, requests: 2 }), 10_000);
+  // Idle once done, counting every request but browser replies.
+  await waitFor(() => expect(events.findLast((e) => e.type === "busy")).toEqual({ type: "busy", busy: false, requests: 3 }), 10_000);
 
   const exited = new Promise<number | null>((done) => bridge.on("exit", done));
   bridge.stdin.end();
