@@ -40,17 +40,16 @@ export async function runBridge(target: BridgeTarget): Promise<void> {
 
   onExtensionMessage(
     joinParts<BridgeRequest>((request) => {
+      if (request.type !== "browser_reply") session.received();
       switch (request.type) {
         case "browser_reply":
           return relay?.reply(request);
         case "start":
-          return session.start(request.sessionFile, request.epoch, request.piPath);
+          return session.start(request.sessionFile, request.piPath);
         case "check_pi":
           return void checkPi(request.piPath).then((check) => sendToExtension({ type: "pi_check", ...check }));
         case "list_tabs":
           return void (target.mentionableTabs?.() ?? Promise.resolve(null)).then((tabs) => sendToExtension({ type: "tabs", tabs }));
-        case "open":
-          return session.open(request.sessionFile, request.epoch);
         case "prompt":
           return void session.prompt(request.text, { promptId: request.promptId, images: request.images, steer: request.steer });
         case "queue_action":

@@ -58,7 +58,7 @@ function when(ts: number): string {
 
 const TRASH_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 4.5h9M6.5 4.5V3h3v1.5M5 4.5l.5 8h5l.5-8" /></svg>';
 
-function renderSessions(sessions: SessionMeta[], currentId: number) {
+function renderSessions(sessions: SessionMeta[], currentId: number, running: number[]) {
   const current = sessions.find((s) => s.id === currentId);
   titleEl.textContent = current?.title || "New chat";
   // Newest first, as the background sends them.
@@ -68,7 +68,10 @@ function renderSessions(sessions: SessionMeta[], currentId: number) {
       li.setAttribute("aria-current", String(s.id === currentId));
 
       const open = li.appendChild(el("button", "chat-open"));
-      open.append(el("span", "", s.title || "New chat"), el("time", "", when(s.updatedAt)));
+      // A chat pi is working on shows a spinner in place of its time.
+      const working = running.includes(s.id);
+      open.append(el("span", "", s.title || "New chat"), working ? el("i", "chat-running") : el("time", "", when(s.updatedAt)));
+      if (working) open.title = "Working";
       open.addEventListener("click", () => {
         chats.hidePopover();
         if (s.id !== currentId) pi.send({ kind: "switch_session", id: s.id });

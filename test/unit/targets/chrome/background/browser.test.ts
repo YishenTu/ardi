@@ -47,6 +47,45 @@ test("parallel commands share attachment and shutdown detaches without closing t
   await expect(browser.execute({ op: "list" })).rejects.toThrow("disconnected");
 });
 
+test("two chats' controllers share a tab: both drive it, and one shutting down leaves it attached for the other", async () => {
+  const first = setup();
+  const second = new ChromeBrowserController();
+  try {
+    chromeFake.onDebuggerCommand = () => ({ result: { value: true } });
+    await first.execute({ op: "eval", id: "10", code: "1" });
+    await second.execute({ op: "eval", id: "10", code: "2" });
+    expect(chromeFake.debuggerAttached).toEqual([10]);
+    await first.dispose();
+    expect(chromeFake.debuggerDetached).toEqual([]);
+    await second.execute({ op: "eval", id: "10", code: "3" });
+    await second.dispose();
+    expect(chromeFake.debuggerDetached).toEqual([10]);
+  } finally {
+    await second.dispose();
+  }
+});
+
+test("a chat reaching a tab while another chat's controller is still detaching from it waits, then attaches", async () => {
+  const first = setup();
+  const second = new ChromeBrowserController();
+  try {
+    chromeFake.onDebuggerCommand = () => ({ result: { value: true } });
+    await first.execute({ op: "eval", id: "10", code: "1" });
+    let release!: () => void;
+    chromeFake.detachGate = new Promise<void>((resolve) => (release = resolve));
+    const disposing = first.dispose();
+    const using = second.execute({ op: "eval", id: "10", code: "2" });
+    // The second controller reaches the tab while the detach is in flight.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    release();
+    await disposing;
+    await expect(using).resolves.toMatchObject({ tab: { id: "10" } });
+    expect(chromeFake.debuggerAttached).toEqual([10, 10]);
+  } finally {
+    await second.dispose();
+  }
+});
+
 test("user cancellation blocks every browser operation until another user prompt", async () => {
   const browser = setup();
   await browser.execute({ op: "cdp", id: "10", method: "Input.insertText", params: { text: "hello" } });

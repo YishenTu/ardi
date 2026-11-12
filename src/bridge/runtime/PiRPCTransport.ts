@@ -1,5 +1,6 @@
 // Adapted from Claudian (src/providers/pi/runtime/PiRPCTransport.ts): timers use Node globals instead of
-// window; dropped what Ardi doesn't use (close listeners, abort signals, raw sends).
+// window; dropped what Ardi doesn't use (close listeners, abort signals, raw sends); added
+// `onAnswer`, so a caller sees its answer in order with pi's events.
 import type { Readable } from 'node:stream';
 
 import { subscribePiJSONLLines, writePiJSONL } from './PiJSONL';
@@ -16,6 +17,7 @@ export interface PiRPCStreams {
 
 interface PendingRequest {
   cleanup: () => void;
+  onAnswer?: (data: unknown) => void;
   reject: (error: Error) => void;
   resolve: (response: unknown) => void;
   type: string;
@@ -89,6 +91,9 @@ export class PiRPCTransport {
     commandType: string,
     payload: Record<string, unknown> = {},
     timeoutMs = DEFAULT_TIMEOUT_MS,
+    // Called with a successful answer as it's read, before events read after
+    // it; the returned promise settles only after the whole read.
+    onAnswer?: (data: unknown) => void,
   ): Promise<T> {
     this.start();
     if (this.disposed) {
@@ -114,6 +119,7 @@ export class PiRPCTransport {
 
       this.pending.set(id, {
         cleanup,
+        onAnswer,
         reject,
         resolve: (response: unknown) => resolve(response as T),
         type: commandType,
@@ -190,11 +196,9 @@ export class PiRPCTransport {
       return;
     }
 
-    if ('data' in record) {
-      pending.resolve(record.data);
-      return;
-    }
-    pending.resolve(record);
+    const data = 'data' in record ? record.data : record;
+    pending.onAnswer?.(data);
+    pending.resolve(data);
   }
 
   #rejectAllPending(error: Error): void {

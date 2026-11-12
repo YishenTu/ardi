@@ -79,6 +79,10 @@ const fake = {
   focusedWindow: 1,
   createdTabs: [] as chrome.tabs.CreateProperties[],
   debuggerAttached: [] as number[],
+  // Tabs this extension's debugger is on now; Chrome refuses a second attach.
+  debuggerOn: new Set<number>(),
+  // Awaited before a detach takes effect, to hold one in flight.
+  detachGate: undefined as Promise<void> | undefined,
   debuggerDetached: [] as number[],
   debuggerCommands: [] as { target: chrome.debugger.Debuggee; method: string; params?: object }[],
   debuggerDetach: new Event(),
@@ -101,6 +105,8 @@ export function resetChrome() {
   fake.focusedWindow = 1;
   fake.createdTabs = [];
   fake.debuggerAttached = [];
+  fake.debuggerOn.clear();
+  fake.detachGate = undefined;
   fake.debuggerDetached = [];
   fake.debuggerCommands = [];
   fake.debuggerDetach.clear();
@@ -170,8 +176,16 @@ export const chromeFake = fake;
   debugger: {
     onDetach: fake.debuggerDetach,
     onEvent: fake.debuggerEvent,
-    async attach(target: chrome.debugger.Debuggee) { fake.debuggerAttached.push(target.tabId!); },
-    async detach(target: chrome.debugger.Debuggee) { fake.debuggerDetached.push(target.tabId!); },
+    async attach(target: chrome.debugger.Debuggee) {
+      if (fake.debuggerOn.has(target.tabId!)) throw new Error(`Another debugger is already attached to the tab with id: ${target.tabId}.`);
+      fake.debuggerOn.add(target.tabId!);
+      fake.debuggerAttached.push(target.tabId!);
+    },
+    async detach(target: chrome.debugger.Debuggee) {
+      await fake.detachGate;
+      fake.debuggerOn.delete(target.tabId!);
+      fake.debuggerDetached.push(target.tabId!);
+    },
     async sendCommand(target: chrome.debugger.Debuggee, method: string, params?: object) {
       fake.debuggerCommands.push({ target, method, params });
       return fake.onDebuggerCommand?.(method, params) ?? {};

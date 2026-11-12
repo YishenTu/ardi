@@ -48,7 +48,8 @@ export type PanelUpdate =
   | { kind: "queue"; queue: QueuedMessage[] }
   // Messages taken back (a stop, an edit, rejected or never answered), for the message box.
   | { kind: "restore"; text: string; images?: ImageAttachment[] }
-  | { kind: "sessions"; sessions: SessionMeta[]; currentId: number };
+  // `running`: ids of chats pi is working on, here or in the background.
+  | { kind: "sessions"; sessions: SessionMeta[]; currentId: number; running: number[] };
 
 export type Settings = {
   // pi's executable. Empty: the pi found by the installer.

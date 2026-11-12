@@ -3,8 +3,8 @@
 // and what goes back to the message box.
 //
 // Ordering: input runs one step at a time, in the order asked, together
-// with the session's own steps (start, switching session; `exclusive`), so
-// a message reaches the session it was sent to and queue edits can't
+// with the session's own steps (start, model changes, compact; `exclusive`),
+// so a message waits for pi to be on its session and queue edits can't
 // interleave. Stop doesn't wait its turn; input asked for before a stop and
 // not yet sent goes back to the message box instead.
 //
@@ -32,7 +32,7 @@ import type { PiRPCTransport } from "./runtime/PiRPCTransport";
 type Message = { text: string; steer: boolean; images?: ImageAttachment[] };
 type Cleared = { steering: string[]; followUp: string[] };
 // Events PiInput sends the extension (the session labels queue and chunk).
-type InputEvent = Extract<SessionUpdate, { type: "queue" | "chunk" }> | Extract<BridgeEvent, { type: "restore" | "prompt_result" }>;
+type InputEvent = Extract<SessionUpdate, { type: "queue" | "chunk" }> | Extract<BridgeEvent, { type: "restore" | "prompt_result" | "busy" }>;
 
 export class PiInput {
   private transport: PiRPCTransport | null = null;
@@ -40,6 +40,14 @@ export class PiInput {
   // Counts stops; a step remembers the count it was asked for at.
   private stops = 0;
   private queue = new QueueTracker();
+  // What keeps pi busy besides its queue: steps asked for and not finished,
+  // other work (a compaction), and a run pi started and hasn't settled.
+  private pending = 0;
+  private tracked = 0;
+  private running = false;
+  private busy = false;
+  // Requests the extension sent so far (see `busy` in protocol.ts).
+  private requests = 0;
 
   constructor(private readonly emit: (event: InputEvent) => void) {}
 
@@ -47,11 +55,6 @@ export class PiInput {
   // the requested session.
   connect(transport: PiRPCTransport): void {
     this.transport = transport;
-  }
-
-  // pi moved to another session: its queue there starts empty.
-  reset(): void {
-    this.queue = new QueueTracker();
   }
 
   // A session step, in order with input.
@@ -84,19 +87,38 @@ export class PiInput {
 
   // Stops pi now. Its queued messages go back to the message box first: pi
   // would still run them after the stop.
-  async stop(): Promise<void> {
+  // Busy until the queue is handed back and pi has stopped, even if the run
+  // settles meanwhile.
+  stop(): Promise<void> {
     this.stops++;
-    if (!this.transport) return;
-    this.giveBack(await this.clear());
-    await this.transport.request("abort").catch((error: unknown) => this.notice(error));
+    const transport = this.transport;
+    if (!transport) return Promise.resolve();
+    const stopping = (async () => {
+      this.giveBack(await this.clear());
+      await transport.request("abort").catch((error: unknown) => this.notice(error));
+    })();
+    this.track(stopping);
+    return stopping;
   }
 
-  // Drops pi's queue without giving it back (the chat is being left).
-  async discard(): Promise<void> {
-    await this.clear();
+  received(): void {
+    this.requests++;
   }
 
-  observe(event: Record<string, unknown>): void {
+  // Work pi does outside the input order (a compaction) counts as busy until it settles.
+  track(work: Promise<unknown>): void {
+    this.tracked++;
+    this.report();
+    void work.finally(() => {
+      this.tracked--;
+      this.report();
+    });
+  }
+
+  // Follows a pi event; `chunks` emits what the chat shows for it. Busy is
+  // reported after them, so idle never comes before the run's end.
+  observe(event: Record<string, unknown>, chunks: () => void = () => {}): void {
+    if (event.type === "agent_start") this.running = true;
     if (event.type === "queue_update") this.emit({ type: "queue", queue: this.queue.update(strings(event.steering), strings(event.followUp)) });
     // pi takes everything queued before it settles; anything left came in
     // as the run ended. After a stop it goes back to the box, otherwise it's
@@ -109,13 +131,29 @@ export class PiInput {
         else await this.resend(left, stopped);
       });
     }
+    if (event.type === "agent_settled") this.running = false;
+    chunks();
+    this.report();
+  }
+
+  // Tells the extension when work starts or runs out.
+  private report(): void {
+    const busy = this.running || this.pending > 0 || this.tracked > 0 || this.queue.list.length > 0;
+    if (busy === this.busy) return;
+    this.busy = busy;
+    this.emit({ type: "busy", busy, requests: this.requests });
   }
 
   // Runs `run` after earlier steps; `stopped` tells whether a stop came
   // since it was asked for.
   private step(run: (stopped: () => boolean) => Promise<void>): Promise<void> {
     const stops = this.stops;
-    const done = this.steps.then(() => run(() => this.stops !== stops));
+    this.pending++;
+    this.report();
+    const done = this.steps.then(() => run(() => this.stops !== stops)).finally(() => {
+      this.pending--;
+      this.report();
+    });
     this.steps = done.catch(() => undefined);
     return done;
   }
@@ -130,7 +168,13 @@ export class PiInput {
     // No timeout: pi answers a prompt that starts a run only once the run
     // is prepared (which can include compacting), and only its answer says
     // whether it will run. If pi dies first, the extension hands it back.
-    const accepted = await this.transport?.request<{ disposition: string }>("prompt", { message: text, images, streamingBehavior: message.steer ? "steer" : "followUp" }, 0).catch((error: unknown) => {
+    // pi answers before its agent_start, so the run counts from the answer,
+    // taken in order with pi's events: a run that started and settled in the
+    // same read stays settled.
+    const started = (data: unknown) => {
+      if ((data as { disposition?: string } | undefined)?.disposition === "started") this.running = true;
+    };
+    const accepted = await this.transport?.request<{ disposition: string }>("prompt", { message: text, images, streamingBehavior: message.steer ? "steer" : "followUp" }, 0, started).catch((error: unknown) => {
       this.notice(error);
       this.giveBack([message]);
       return undefined;

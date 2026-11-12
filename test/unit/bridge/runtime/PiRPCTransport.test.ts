@@ -33,6 +33,23 @@ describe("PiRPCTransport", () => {
     expect(await models).toEqual({ models: [] });
   });
 
+  test("hands a request its answer in order with the events around it, before the request settles", async () => {
+    const { pi, sent, transport } = connect();
+    const seen: string[] = [];
+    transport.onEvent((event) => seen.push(String(event.type)));
+    const request = transport.request("prompt", {}, 0, () => seen.push("answer"));
+    await tick();
+    // One read: the answer, then the run it started, start to end.
+    pi.write([
+      JSON.stringify({ type: "response", id: sent[0].id, success: true, data: { disposition: "started" } }),
+      JSON.stringify({ type: "agent_start" }),
+      JSON.stringify({ type: "agent_settled" }),
+      "",
+    ].join("\n"));
+    await request;
+    expect(seen).toEqual(["answer", "agent_start", "agent_settled"]);
+  });
+
   test("rejects a request pi answers with an error", async () => {
     const { sent, transport, write } = connect();
     const request = transport.request("set_model", { provider: "x", modelId: "y" });
