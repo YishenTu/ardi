@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import { $, loadPanel } from "../../support/panel";
 import type { ChatChunk } from "../../../src/chat";
+import { runMessage } from "../../../src/schedule";
 import { ChatView } from "../../../src/sidepanel/ChatView";
 
 let root: HTMLElement;
@@ -173,5 +174,25 @@ describe("answers", () => {
       if (clipboard) Object.defineProperty(navigator, "clipboard", clipboard);
       else delete (navigator as { clipboard?: unknown }).clipboard;
     }
+  });
+});
+
+describe("a scheduled run's message", () => {
+  const job = { kind: "job" as const, id: "j", title: "Invoice check", prompt: "find new invoices", when: { kind: "daily" as const, time: "09:00" }, paused: false, next: 0 };
+
+  test("shows a check-back as a card with its note, not as something the user said", () => {
+    view.addUser(runMessage({ kind: "check_back", id: "c", chatId: 1, note: "is the deploy done?", next: 1 }), 0);
+    expect(root.querySelector(".msg.user")).toBeNull();
+    const card = root.querySelector(".step.scheduled")!;
+    expect(card.querySelector(".step-label")!.textContent).toBe("Check-back");
+    expect(card.querySelector(".step-arg")!.textContent).toBe("is the deploy done?");
+  });
+
+  test("shows a job run by its title, expanding to its prompt, from history too", () => {
+    view.renderHistory([{ role: "user", id: "u", content: runMessage(job), timestamp: 0 }]);
+    const card = root.querySelector(".step.scheduled")!;
+    expect(card.querySelector(".step-label")!.textContent).toBe("Scheduled job");
+    expect(card.querySelector(".step-arg")!.textContent).toBe("Invoice check");
+    expect(card.querySelector(".step-body")!.textContent).toBe("find new invoices");
   });
 });

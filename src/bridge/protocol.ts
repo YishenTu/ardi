@@ -2,6 +2,7 @@
 // native messaging.
 import type { TabMention } from "../mention";
 import type { ChatChunk, ChatMessage, ImageAttachment, ModelState, PiCommand, QueueAction, QueuedMessage, ThinkingLevel } from "../chat";
+import type { ScheduleRequest } from "../schedule";
 
 // A target can let pi's tools reach the extension through the bridge: the
 // bridge serves a local relay (URL and bearer token in these variables, for
@@ -14,9 +15,17 @@ export type BrowserRelayEvent =
   | { type: "browser_request"; id: string; request: unknown }
   | { type: "browser_cancel"; id: string };
 
+// pi's check_back and schedule_job tools ask the extension through pi's own extension UI
+// protocol: an `editor` dialog with this title, the request as JSON in its
+// prefill. The bridge never shows it; it forwards it as `schedule_request`
+// and returns the extension's `schedule_reply`, as JSON, as the dialog's value.
+export const SCHEDULE_DIALOG = "ardi:schedule";
+export type ScheduleReply = { type: "schedule_reply"; id: string; result?: unknown; error?: string };
+
 // Extension -> bridge.
 export type BridgeRequest =
   | BrowserReply
+  | ScheduleReply
   // Starts pi (`piPath`, or the installed pi). Resumes `sessionFile` if it
   // exists; otherwise pi starts a new session. A bridge's pi stays on that
   // session for life: each chat has its own bridge.
@@ -60,11 +69,12 @@ export type BridgeEvent =
   // Whether the bridge has work left: a run, a queue, input on its way to pi
   // or a compaction. Sent on change, after the events that work produced
   // (`prompt_result`, `restore`). `requests`: how many requests other than
-  // `browser_reply` it had received, so the extension can
+  // `browser_reply` and `schedule_reply` it had received, so the extension can
   // tell an idle report from before its latest request. The extension stops
   // a chat off screen only once it's idle with every request counted.
   | { type: "busy"; busy: boolean; requests: number }
   | BrowserRelayEvent
+  | { type: "schedule_request"; id: string; request: ScheduleRequest }
   // Messages taken back (a stop, an edit, or rejected by pi), for the message box.
   | { type: "restore"; text: string; images?: ImageAttachment[] }
   | ({ type: "pi_check" } & PiCheck)

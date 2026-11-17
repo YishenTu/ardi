@@ -18,7 +18,9 @@
 // a queued "eager:" message is taken before pi answers, and a "slip:" one is
 // taken just before a clear_queue. Like pi, it expands "/skill:demo X" to
 // "expanded demo: X", and an image-only message it takes stays listed in its
-// queue (pi drops taken messages by text).
+// queue (pi drops taken messages by text). A "schedule:" message asks the
+// client through an extension UI editor dialog, as Ardi's scheduling tools do,
+// and replies with the answer.
 
 import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -182,6 +184,12 @@ async function run(text: string, images?: Record<string, unknown>[]) {
 // Echoes the message back as the reply, with pi's event sequence for a turn.
 // `queued`: the message pi takes from its queue.
 async function turn(text: string, images?: Record<string, unknown>[], queued?: Queued) {
+  if (text.startsWith("schedule:")) {
+    const id = `ui-${Math.random().toString(16).slice(2)}`;
+    const answer = new Promise<string>((resolve) => dialogs.set(id, resolve));
+    send({ type: "extension_ui_request", id, method: "editor", title: "ardi:schedule", prefill: text.slice("schedule:".length) });
+    text = await answer;
+  }
   if (text === "browser:list") {
     const response = await fetch(process.env.ARDI_BROWSER_URL!, {
       method: "POST", headers: { Authorization: `Bearer ${process.env.ARDI_BROWSER_TOKEN}`, "Content-Type": "application/json" },
@@ -206,6 +214,9 @@ async function turn(text: string, images?: Record<string, unknown>[], queued?: Q
   send({ type: "agent_end", messages: [user, message], willRetry: false });
 }
 
+// Open extension UI dialogs, answered by `extension_ui_response`.
+const dialogs = new Map<string, (value: string) => void>();
+
 let buffer = "";
 process.stdin.setEncoding("utf8");
 process.stdin.on("data", (chunk: string) => {
@@ -214,6 +225,11 @@ process.stdin.on("data", (chunk: string) => {
     const command = JSON.parse(buffer.slice(0, end));
     buffer = buffer.slice(end + 1);
     if (process.env.FAKE_PI_STALL) continue;
+    // Not a command: no response.
+    if (command.type === "extension_ui_response") {
+      dialogs.get(command.id)?.(command.value ?? "cancelled");
+      continue;
+    }
     try {
       if (command.type === "prompt" && command.message === "reject:busy") throw new Error("Agent is already streaming. Specify streamingBehavior to queue a message.");
       send({ type: "response", id: command.id, command: command.type, success: true, data: handle(command) });

@@ -2,6 +2,7 @@ import DOMPurify from "dompurify";
 import { marked } from "marked";
 import type { ChatChunk, ChatMessage, ImageAttachment, NoticeLevel, ToolCall } from "../chat";
 import { splitMentions, type TabMention } from "../mention";
+import { parseRunMessage } from "../schedule";
 import { el, imageUrl, opensTab, step, tabChip } from "./dom";
 import { openLightbox } from "./lightbox";
 import { toolCard, updateToolCard, type ToolState } from "./ToolCard";
@@ -59,7 +60,8 @@ export class ChatView {
   addUser(text: string, at: number, images: ImageAttachment[] = []) {
     const { run } = this;
     if (run) this.endTail();
-    const entry = this.append(el("div", "entry user"));
+    const scheduled = parseRunMessage(text);
+    const entry = this.append(el("div", scheduled ? "entry user scheduled-run" : "entry user"));
     if (images.length) {
       const row = entry.appendChild(el("div", "msg-attachments"));
       for (const image of images) {
@@ -71,8 +73,14 @@ export class ChatView {
         tile.addEventListener("click", () => openLightbox(img.src));
       }
     }
-    // An image-only message reaches pi with a space for text.
-    if (text.trim()) {
+    if (scheduled) {
+      // Sent by a check-back or a job, not typed by the user: a card, like a tool call's.
+      const card = entry.appendChild(step("scheduled", scheduled.kind === "job" ? "Scheduled job" : "Check-back"));
+      card.querySelector(".glyph")!.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5" /><path d="M8 5v3l2 1.5" /></svg>';
+      card.querySelector(".step-arg")!.textContent = scheduled.kind === "job" ? scheduled.title : scheduled.note;
+      card.querySelector(".step-body")!.textContent = scheduled.kind === "job" ? scheduled.prompt : scheduled.note;
+    } else if (text.trim()) {
+      // An image-only message reaches pi with a space for text.
       const msg = entry.appendChild(el("div", "msg user"));
       for (const part of splitMentions(text)) msg.append(typeof part === "string" ? part : mentionLink(part));
     }

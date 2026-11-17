@@ -137,6 +137,12 @@ export class PiRPCTransport {
     });
   }
 
+  // A record pi answers with nothing, such as an `extension_ui_response`.
+  send(record: PiRPCRecord): void {
+    if (this.disposed) return;
+    this.#sendRaw(record);
+  }
+
   dispose(error: Error = new PiRPCTransportClosedError('Pi RPC transport disposed')): void {
     if (this.disposed) {
       return;

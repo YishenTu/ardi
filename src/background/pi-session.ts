@@ -4,6 +4,8 @@ import { plainMentions } from "../mention";
 import { restoreOf } from "../restore";
 import { joinParts, postInParts } from "../parts";
 import type { PanelUpdate, PiStatus, SessionMeta } from "../panel-protocol";
+import { runMessage, type Scheduled } from "../schedule";
+import * as schedules from "./schedules";
 import { loadSettings } from "./settings";
 import * as store from "./store";
 import { target, type BrowserLink } from "./target";
@@ -308,6 +310,15 @@ async function onBridgeEvent(c: Chat, conn: Live, event: Exclude<BridgeEvent, { 
       giveBack(c, [...conn.unanswered.values()]);
       conn.unanswered.clear();
       break;
+    case "schedule_request": {
+      const reply = await schedules.answerTool(event.request, { chatId: c.meta.id, model: c.model }).then(
+        (result) => ({ result }),
+        (error: unknown) => ({ error: error instanceof Error ? error.message : String(error) }),
+      );
+      // A reply answers pi's tool, not the user: not counted in `sent`.
+      if (live(c) === conn) postInParts(conn.port, { type: "schedule_reply", id: event.id, ...reply });
+      break;
+    }
     case "pi_check":
     case "tabs":
       // Only sent to the one-shot ports of ask-bridge.ts.
@@ -386,6 +397,12 @@ export async function restart() {
   await startChat(c);
 }
 
+// A panel shows `c`: what a scheduled run did there is no longer unread.
+async function seen(c: Chat) {
+  c.meta.unread = false;
+  await store.putSession(c.meta);
+}
+
 // Puts `next` on screen: back to its chat if pi still works on it, else a
 // fresh pi on its session. The chat left keeps its pi only while it's busy.
 async function switchTo(next: SessionMeta, { stopLeft = false } = {}) {
@@ -399,6 +416,7 @@ async function switchTo(next: SessionMeta, { stopLeft = false } = {}) {
   if (busy(left)) away.add(left);
   else stop(left);
   void handOver();
+  if (chat.meta.unread) await seen(chat);
   await broadcastSessions();
   await startChat(chat);
 }
@@ -418,6 +436,7 @@ export const deleteSession = inOrder(async (id: number) => {
   await ready;
   await store.deleteSession(id);
   dropHeld(id);
+  await schedules.dropCheckBack(id);
   for (const c of away) {
     if (c.meta.id !== id) continue;
     stop(c);
@@ -428,10 +447,54 @@ export const deleteSession = inOrder(async (id: number) => {
   await switchTo(latest ?? draft(), { stopLeft: true });
 });
 
-export const prompt = inOrder(async (text: string, images?: ImageAttachment[], steer = false) => {
+export const prompt = inOrder(async (text: string, images?: ImageAttachment[], steer?: boolean) => {
   await ready;
   // The chat it was sent from, even if the user moves on meanwhile.
-  const c = chat;
+  await send(chat, text, images, steer);
+});
+
+// Runs what came due: a check-back prompts its chat; a job, a new chat named
+// after it, on the job's model and effort. A chat off screen runs
+// in the background like one the user left, and is marked unread.
+export const runJob = inOrder(async (run: Scheduled) => {
+  await ready;
+  // Storage first: once the chat is picked, nothing may wait until the prompt
+  // is sent, or its bridge could report idle and be stopped meanwhile.
+  const now = Date.now();
+  let meta: SessionMeta | undefined;
+  if (run.kind === "job") {
+    meta = await store.addSession({ title: run.title.slice(0, TITLE_LEN), createdAt: now, updatedAt: now, unread: true });
+  } else {
+    meta = await store.getSession(run.chatId);
+    // The chat was deleted.
+    if (!meta) return;
+    meta.updatedAt = now;
+    if (meta.id !== chat.meta.id) meta.unread = true;
+    await store.putSession(meta);
+  }
+  const c = meta.id === chat.meta.id ? chat : ([...away].find((a) => a.meta.id === meta.id) ?? opened(meta));
+  if (c !== chat) {
+    away.add(c);
+    c.meta.updatedAt = now;
+    c.meta.unread = true;
+  }
+  // From here to the prompt nothing waits: a bridge that reports idle in
+  // between would be stopped as a chat off screen with nothing to do.
+  await startChat(c);
+  const conn = live(c);
+  // pi couldn't start; the run is skipped.
+  if (!conn) return;
+  if (run.kind === "job") {
+    if (run.model) post(c, { type: "set_model", provider: run.model.provider, modelId: run.model.id });
+    if (run.thinkingLevel) post(c, { type: "set_thinking_level", level: run.thinkingLevel });
+  }
+  deliver(conn, runMessage(run), undefined, false, conn.browser?.preparePrompt());
+  await broadcastSessions();
+});
+
+// Sends a message to `c`'s pi, starting it if needed. A draft becomes a
+// stored chat named after its first message.
+async function send(c: Chat, text: string, images?: ImageAttachment[], steer = false) {
   await startChat(c);
   const origin = live(c);
   const accept = origin?.browser?.preparePrompt();
@@ -454,14 +517,19 @@ export const prompt = inOrder(async (text: string, images?: ImageAttachment[], s
   if (!sentTo) return giveBack(c, [{ text, images }]);
   // A restart during storage writes must not drop the message. Permission
   // callbacks belong to their original controller, not the replacement port.
+  deliver(sentTo, text, images, steer, origin?.port === sentTo.port ? accept : undefined);
+}
+
+// Posts a prompt to an open bridge; it waits in `unanswered` until pi answers.
+function deliver(conn: Live, text: string, images: ImageAttachment[] | undefined, steer: boolean, accept?: () => void) {
   const promptId = crypto.randomUUID();
-  sentTo.unanswered.set(promptId, { text, images, accept: origin?.port === sentTo.port ? accept : undefined });
+  conn.unanswered.set(promptId, { text, images, accept });
   // The chat shows it once pi starts it (a `user` chunk).
   const request: Extract<BridgeRequest, { type: "prompt" }> = { type: "prompt", text, images, promptId };
   if (steer) request.steer = true;
-  sentTo.sent++;
-  postInParts(sentTo.port, request);
-});
+  conn.sent++;
+  postInParts(conn.port, request);
+}
 
 export function queueAction({ action, index, text }: QueueAction) {
   post(chat, { type: "queue_action", action, index, text });
@@ -488,6 +556,8 @@ export async function attachPanel(p: chrome.runtime.Port) {
   panels.add(p);
   p.onDisconnect.addListener(() => panels.delete(p));
   await ready;
+  // Only waits when there's something to clear, so a panel's replay isn't held up.
+  if (chat.meta.unread) await seen(chat);
   postInParts(p, replay());
   postInParts(p, await sessionsUpdate());
   await handOver(p);

@@ -66,6 +66,11 @@ export class FakePort {
 
 const fake = {
   storage: new Map<string, unknown>(),
+  // chrome.storage.session: cleared when the browser quits.
+  sessionStorage: new Map<string, unknown>(),
+  // chrome.alarms by name; fire one with `alarmFired.emit(alarm)`.
+  alarms: new Map<string, chrome.alarms.Alarm>(),
+  alarmFired: new Event(),
   nativePorts: [] as FakePort[],
   // Ports opened with chrome.runtime.connect (the panel's).
   ports: [] as FakePort[],
@@ -96,6 +101,9 @@ const fake = {
 
 export function resetChrome() {
   fake.storage.clear();
+  fake.sessionStorage.clear();
+  fake.alarms.clear();
+  fake.alarmFired.clear();
   fake.nativePorts.length = 0;
   fake.ports.length = 0;
   fake.onConnectNative = undefined;
@@ -138,8 +146,32 @@ const userScripts = {
 
 export const chromeFake = fake;
 
+function storageArea(map: Map<string, unknown>) {
+  return {
+    async get(key: string) {
+      return map.has(key) ? { [key]: structuredClone(map.get(key)) } : {};
+    },
+    async set(items: Record<string, unknown>) {
+      for (const [key, value] of Object.entries(items)) map.set(key, structuredClone(value));
+    },
+  };
+}
+
 (globalThis as any).chrome = {
+  alarms: {
+    onAlarm: fake.alarmFired,
+    async create(name: string, info: { when: number }) {
+      fake.alarms.set(name, { name, scheduledTime: info.when, persistAcrossSessions: false });
+    },
+    async clear(name: string) {
+      return fake.alarms.delete(name);
+    },
+    async get(name: string) {
+      return fake.alarms.get(name);
+    },
+  },
   storage: {
+    session: storageArea(fake.sessionStorage),
     local: {
       async get(key: string) {
         return fake.storage.has(key) ? { [key]: structuredClone(fake.storage.get(key)) } : {};

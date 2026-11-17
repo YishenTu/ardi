@@ -1,6 +1,7 @@
 import { joinParts } from "../parts";
 import { PANEL_PORT, type PanelRequest, type PanelAnswers, type PanelQuestion } from "../panel-protocol";
 import * as pi from "./pi-session";
+import * as schedules from "./schedules";
 import * as settings from "./settings";
 import { mentionableTabs } from "./tabs";
 import { setTarget, type BackgroundTarget } from "./target";
@@ -13,6 +14,15 @@ export function startBackground(target: BackgroundTarget): void {
   // Clicking the toolbar icon opens the side panel.
   chrome.runtime.onInstalled.addListener(() => {
     void chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+    void schedules.rearm();
+  });
+
+  // Scheduled jobs. Listeners go in before the first await, so an alarm that
+  // woke the worker reaches them.
+  void schedules.noteBrowserStart();
+  chrome.runtime.onStartup.addListener(() => void schedules.rearm());
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    void schedules.due(alarm).then((job) => job && pi.runJob(job));
   });
 
   chrome.runtime.onConnect.addListener((port) => {
@@ -68,5 +78,14 @@ async function answer(req: PanelQuestion) {
     }
     case "mention_tabs":
       return { tabs: await mentionableTabs() } satisfies PanelAnswers["mention_tabs"];
+    case "list_jobs":
+      return { jobs: await schedules.scheduledJobs() } satisfies PanelAnswers["list_jobs"];
+    case "save_job":
+      return schedules.saveJob(req.job).then(
+        (job) => ({ job }) satisfies PanelAnswers["save_job"],
+        (error: unknown) => ({ error: error instanceof Error ? error.message : String(error) }) satisfies PanelAnswers["save_job"],
+      );
+    case "delete_job":
+      return { deleted: await schedules.deleteJob(req.id) } satisfies PanelAnswers["delete_job"];
   }
 }
