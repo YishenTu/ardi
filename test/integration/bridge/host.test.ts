@@ -3,7 +3,7 @@
 // runs the shared host; Ardia's has no relay.
 import { afterEach, expect, test } from "bun:test";
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
 
@@ -89,8 +89,8 @@ test("disconnecting while pi is still starting exits cleanly and stops pi", asyn
   try {
     const events = startBridge();
     bridge.stdin.write(frame({ type: "start", piPath: FAKE_PI }));
-    await waitFor(() => expect(existsSync(log)).toBe(true), 10_000);
-    const { pid } = JSON.parse(readFileSync(log, "utf8")) as { pid: number };
+    // The fake pi creates the log before filling it: wait until it parses.
+    const { pid } = await waitFor(() => JSON.parse(readFileSync(log, "utf8")) as { pid: number }, 10_000);
     const exited = new Promise<number | null>((done) => bridge.on("exit", done));
     bridge.stdin.end();
     expect(await exited).toBe(0);
