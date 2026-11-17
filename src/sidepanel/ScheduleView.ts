@@ -1,6 +1,6 @@
 import type { ModelState, ThinkingLevel } from "../chat";
 import { describeWhen, type Job, type JobDraft, type When } from "../schedule";
-import { el } from "./dom";
+import { deleteButton, el } from "./dom";
 import { LEVEL_NAMES } from "./ModelPicker";
 import { askBackground } from "./pi";
 
@@ -17,7 +17,6 @@ const DAY_NUMBERS = [1, 2, 3, 4, 5, 6, 0];
 
 const PAUSE_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5v7M10 4.5v7" /></svg>';
 const RESUME_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 4 11.5 8l-6 4z" /></svg>';
-const TRASH_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 4.5h9M6.5 4.5V3h3v1.5M5 4.5l.5 8h5l.5-8" /></svg>';
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const dateValue = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -77,7 +76,7 @@ export class ScheduleView {
     }
     this.model.addEventListener("change", () => this.renderEffort());
     this.newButton.addEventListener("click", () => this.edit(undefined));
-    this.pauseButton.addEventListener("click", () => this.editing && void this.togglePause(this.editing).then(() => this.showList()));
+    this.pauseButton.addEventListener("click", () => this.editing && void this.togglePause(this.editing));
     this.deleteButton.addEventListener("click", () => this.editing && void this.remove(this.editing.id).then(() => this.showList()));
     this.form.addEventListener("submit", (e) => {
       e.preventDefault();
@@ -141,27 +140,9 @@ export class ScheduleView {
     pause.innerHTML = job.paused ? RESUME_ICON : PAUSE_ICON;
     pause.addEventListener("click", (e) => {
       e.stopPropagation();
-      void this.togglePause(job).then(() => this.showList());
+      void this.togglePause(job);
     });
-    // First click arms, second click deletes, as in the chat list.
-    const del = actions.appendChild(el("button", "chat-delete job-delete"));
-    del.type = "button";
-    del.title = "Delete job";
-    del.innerHTML = TRASH_ICON;
-    del.addEventListener("click", (e) => {
-      e.stopPropagation();
-      if (!del.classList.contains("armed")) {
-        del.classList.add("armed");
-        del.textContent = "Delete";
-        return;
-      }
-      void this.remove(job.id).then(() => this.showList());
-    });
-    del.addEventListener("mouseleave", () => {
-      if (!del.classList.contains("armed")) return;
-      del.classList.remove("armed");
-      del.innerHTML = TRASH_ICON;
-    });
+    actions.append(deleteButton("chat-delete job-delete", "Delete job", () => void this.remove(job.id).then(() => this.showList())));
     return row;
   }
 
@@ -171,8 +152,12 @@ export class ScheduleView {
     return [describeWhen(job.when), model, job.thinkingLevel && LEVEL_NAMES[job.thinkingLevel]].filter(Boolean).join(" · ");
   }
 
-  private togglePause(job: Job) {
-    return askBackground({ kind: "save_job", job: { ...draftOf(job), paused: !job.paused } });
+  // A job that can't resume (its one time has passed) opens with the reason.
+  private async togglePause(job: Job) {
+    const { error } = await askBackground({ kind: "save_job", job: { ...draftOf(job), paused: !job.paused } });
+    if (!error) return this.showList();
+    this.edit(job);
+    this.error.textContent = error;
   }
 
   private remove(id: string) {

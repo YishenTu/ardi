@@ -3,7 +3,7 @@ import type { PiStatus, SessionMeta } from "../panel-protocol";
 import { Attachments } from "./Attachments";
 import { ChatView } from "./ChatView";
 import { Composer } from "./Composer";
-import { el } from "./dom";
+import { deleteButton, el } from "./dom";
 import { closeLightbox } from "./lightbox";
 import { ModelPicker } from "./ModelPicker";
 import { PiClient } from "./pi";
@@ -57,8 +57,6 @@ function when(ts: number): string {
   return date.toDateString() === new Date().toDateString() ? clockFormat.format(date) : dateFormat.format(date);
 }
 
-const TRASH_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 4.5h9M6.5 4.5V3h3v1.5M5 4.5l.5 8h5l.5-8" /></svg>';
-
 function renderSessions(sessions: SessionMeta[], currentId: number, running: number[]) {
   const current = sessions.find((s) => s.id === currentId);
   titleEl.textContent = current?.title || "New chat";
@@ -79,23 +77,7 @@ function renderSessions(sessions: SessionMeta[], currentId: number, running: num
         if (s.id !== currentId) pi.send({ kind: "switch_session", id: s.id });
       });
 
-      // First click arms, second click deletes.
-      const del = li.appendChild(el("button", "chat-delete"));
-      del.title = "Delete chat";
-      del.innerHTML = TRASH_ICON;
-      del.addEventListener("click", () => {
-        if (!del.classList.contains("armed")) {
-          del.classList.add("armed");
-          del.textContent = "Delete";
-          return;
-        }
-        pi.send({ kind: "delete_session", id: s.id });
-      });
-      del.addEventListener("mouseleave", () => {
-        if (!del.classList.contains("armed")) return;
-        del.classList.remove("armed");
-        del.innerHTML = TRASH_ICON;
-      });
+      li.append(deleteButton("chat-delete", "Delete chat", () => pi.send({ kind: "delete_session", id: s.id })));
       return li;
     }),
   );

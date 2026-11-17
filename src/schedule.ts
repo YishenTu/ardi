@@ -28,7 +28,7 @@ export type Job = {
   thinkingLevel?: ThinkingLevel;
   paused: boolean;
   // The next run (ms since epoch).
-  next?: number;
+  next: number;
 };
 
 // The model's own follow-up: `note` comes back to its chat at `next`. One per

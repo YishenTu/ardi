@@ -178,7 +178,7 @@ describe("answers", () => {
 });
 
 describe("a scheduled run's message", () => {
-  const job = { kind: "job" as const, id: "j", title: "Invoice check", prompt: "find new invoices", when: { kind: "daily" as const, time: "09:00" }, paused: false };
+  const job = { kind: "job" as const, id: "j", title: "Invoice check", prompt: "find new invoices", when: { kind: "daily" as const, time: "09:00" }, paused: false, next: 0 };
 
   test("shows a check-back as a card with its note, not as something the user said", () => {
     view.addUser(runMessage({ kind: "check_back", id: "c", chatId: 1, note: "is the deploy done?", next: 1 }), 0);

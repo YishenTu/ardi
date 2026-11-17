@@ -51,7 +51,7 @@ describe("described in words", () => {
 });
 
 describe("a run's message", () => {
-  const job = { kind: "job" as const, id: "j", title: "Invoice check", prompt: "find new invoices\n\nand totals", when: { kind: "daily" as const, time: "09:00" }, paused: false };
+  const job = { kind: "job" as const, id: "j", title: "Invoice check", prompt: "find new invoices\n\nand totals", when: { kind: "daily" as const, time: "09:00" }, paused: false, next: 0 };
 
   test("reads back as the run it came from; anything else is the user's own", () => {
     expect(parseRunMessage(runMessage(job))).toEqual({ kind: "job", title: "Invoice check", prompt: "find new invoices\n\nand totals" });

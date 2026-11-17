@@ -23,7 +23,7 @@ function inOrder<T>(run: () => Promise<T>): Promise<T> {
 }
 
 // Everything stored: jobs and check-backs.
-export async function listScheduled(): Promise<Scheduled[]> {
+async function listScheduled(): Promise<Scheduled[]> {
   const { [KEY]: all = [] } = await chrome.storage.local.get(KEY);
   return all as Scheduled[];
 }
@@ -38,7 +38,7 @@ async function store(all: Scheduled[]): Promise<void> {
 }
 
 async function arm(s: Scheduled): Promise<void> {
-  if ((s.kind === "job" && s.paused) || s.next === undefined) await chrome.alarms.clear(ALARM + s.id);
+  if (s.kind === "job" && s.paused) await chrome.alarms.clear(ALARM + s.id);
   else await chrome.alarms.create(ALARM + s.id, { when: s.next });
 }
 
@@ -84,10 +84,11 @@ function setCheckBack(chatId: number, note: string, at: number): Promise<CheckBa
   });
 }
 
+// Deletes job `id`; false if there's no such job.
 export function deleteJob(id: string): Promise<boolean> {
   return inOrder(async () => {
     const all = await listScheduled();
-    const left = await remove(all, (s) => s.id === id);
+    const left = await remove(all, (s) => s.kind === "job" && s.id === id);
     if (left.length === all.length) return false;
     await store(left);
     return true;
@@ -131,7 +132,7 @@ export function rearm(): Promise<void> {
   return inOrder(async () => {
     const now = Date.now();
     const all = (await listScheduled()).flatMap((s): Scheduled[] => {
-      if (s.next !== undefined && s.next > now) return [s];
+      if (s.next > now) return [s];
       const next = s.kind === "job" ? nextRun(s.when, now) : undefined;
       return next === undefined ? [] : [{ ...s, next }];
     });
@@ -160,12 +161,9 @@ export async function answerTool(request: ScheduleRequest, from: { chatId: numbe
     }
     case "list":
       return (await scheduledJobs()).map(summary);
-    case "cancel": {
-      const job = (await scheduledJobs()).find((j) => j.id === request.id);
-      if (!job) throw new Error(`No scheduled job with id ${request.id}`);
-      await deleteJob(job.id);
-      return { cancelled: job.id };
-    }
+    case "cancel":
+      if (!(await deleteJob(request.id))) throw new Error(`No scheduled job with id ${request.id}`);
+      return { cancelled: request.id };
     default:
       throw new Error("Unknown schedule operation");
   }
@@ -176,7 +174,7 @@ function summary(job: Job) {
     id: job.id,
     title: job.title,
     when: describeWhen(job.when),
-    next: job.next === undefined ? null : new Date(job.next).toString(),
+    next: new Date(job.next).toString(),
     paused: job.paused,
   };
 }

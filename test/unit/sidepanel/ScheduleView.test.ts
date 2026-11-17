@@ -46,7 +46,7 @@ const choose = (group: string, label: string) =>
 
 beforeEach(() => {
   loadPanel();
-  jobs = [{ kind: "job", id: "j1", title: "Invoice check", prompt: "find invoices", when: { kind: "weekdays", time: "09:00" }, model: { provider: "p", id: "haiku" }, thinkingLevel: "low", paused: false }];
+  jobs = [{ kind: "job", id: "j1", title: "Invoice check", prompt: "find invoices", when: { kind: "weekdays", time: "09:00" }, model: { provider: "p", id: "haiku" }, thinkingLevel: "low", paused: false, next: Date.now() + 1000 }];
   background();
   view = new ScheduleView($("schedule"), () => MODELS);
 });
@@ -108,5 +108,14 @@ describe("Scheduled view", () => {
     $("job-save").click();
     await waitFor(() => expect($("job-error").textContent).toBe("That time has already passed"));
     expect($("job-form").hidden).toBe(false);
+  });
+
+  test("a job the background refuses to resume opens with the reason", async () => {
+    jobs = [{ kind: "job", id: "j1", title: "Renew", prompt: "renew", when: { kind: "once", at: Date.now() - 60_000 }, paused: true, next: Date.now() - 60_000 }];
+    await view.open();
+    rows()[0].querySelector<HTMLButtonElement>("button[title=Resume]")!.click();
+    await waitFor(() => expect($("job-error").textContent).toBe("That time has already passed"));
+    expect($("job-form").hidden).toBe(false);
+    expect(field<HTMLInputElement>("job-title").value).toBe("Renew");
   });
 });

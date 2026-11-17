@@ -10,6 +10,29 @@ export function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = ""
   return node;
 }
 
+const TRASH_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 4.5h9M6.5 4.5V3h3v1.5M5 4.5l.5 8h5l.5-8" /></svg>';
+
+// A trash button for a row: the first click arms it ("Delete"), the second
+// deletes. Leaving it disarms it. Clicks don't reach the row.
+export function deleteButton(className: string, title: string, confirmed: () => void): HTMLButtonElement {
+  const button = el("button", className);
+  button.type = "button";
+  button.title = title;
+  button.innerHTML = TRASH_ICON;
+  button.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (button.classList.contains("armed")) return confirmed();
+    button.classList.add("armed");
+    button.textContent = "Delete";
+  });
+  button.addEventListener("mouseleave", () => {
+    if (!button.classList.contains("armed")) return;
+    button.classList.remove("armed");
+    button.innerHTML = TRASH_ICON;
+  });
+  return button;
+}
+
 // A collapsed row in a reply (thinking or a tool call) that expands to its
 // `.step-body`. `.step-arg` is a short line after the label (hidden when empty).
 export function step(kind: string, label: string): HTMLDetailsElement {
