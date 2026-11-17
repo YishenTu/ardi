@@ -1,7 +1,7 @@
 import type { ModelInfo, ModelState, ThinkingLevel } from "../chat";
 import { el } from "./dom";
 
-const LEVEL_NAMES: Record<ThinkingLevel, string> = {
+export const LEVEL_NAMES: Record<ThinkingLevel, string> = {
   off: "Off",
   minimal: "Min",
   low: "Low",

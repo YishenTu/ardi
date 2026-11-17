@@ -349,4 +349,16 @@ describe("what the chat shows", () => {
     expect(events).toContainEqual({ type: "restore", text: "reject:busy" });
     expect(users()).toEqual([]);
   });
+
+  test("pi's schedule tool asks the extension through the bridge and gets its answer", async () => {
+    void startSession().prompt('schedule:{"op":"list"}');
+    const request = await waitFor(() => {
+      const found = events.find((e) => e.type === "schedule_request");
+      expect(found).toBeDefined();
+      return found as Extract<BridgeEvent, { type: "schedule_request" }>;
+    });
+    expect(request.request).toEqual({ op: "list" });
+    session.scheduleReply({ type: "schedule_reply", id: request.id, result: [] });
+    await waitFor(() => expect(chunks()).toContainEqual({ type: "text", content: 'echo: {"result":[]}' }));
+  });
 });

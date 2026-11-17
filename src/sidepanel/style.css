@@ -550,3 +550,33 @@ img.row-icon { background: none; }
 .row-link:hover { background: var(--surface); }
 .row-arrow { flex: none; color: var(--faint); transition: color 0.15s, transform 0.15s; }
 .row-link:hover .row-arrow { color: var(--fg); transform: translate(1px, -1px); }
+
+/* Scheduled jobs */
+
+.schedule .bar h2 { margin-right: auto; }
+.job { align-items: flex-start; cursor: pointer; }
+.job:hover { background: var(--surface); }
+.job:first-child { border-radius: 10px 10px 0 0; }
+.job:last-child { border-radius: 0 0 10px 10px; }
+.job:only-child { border-radius: 10px; }
+.job.paused :is(.row-name, .row-desc) { color: var(--faint); }
+.job-actions { display: flex; align-items: center; gap: 2px; margin-top: -3px; }
+.job-actions .icon-btn { width: 26px; height: 26px; }
+.job-actions .chat-delete { position: static; visibility: visible; }
+.job-empty { margin: 4px; font-size: 12.5px; color: var(--faint); }
+#job-list:not([hidden]) + .job-empty { display: none; }
+.job-input { font: 13px var(--sans); }
+textarea.job-input { resize: vertical; line-height: 1.5; }
+.row.stack .effort { margin: 0; }
+.field-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; }
+.field-row .text-input { width: auto; }
+#job-every { width: 64px; }
+#job-model { font: 13px var(--sans); }
+.days { display: flex; gap: 4px; }
+.days button { flex: 1; padding: 4px 0; border-radius: 6px; font-size: 12px; color: var(--muted); background: var(--surface); }
+.days button[aria-checked="true"] { background: var(--fg); color: var(--bg); font-weight: 550; }
+.job-cta { display: flex; justify-content: flex-end; margin-top: 16px; }
+.btn.primary { background: var(--fg); color: var(--bg); border-color: transparent; padding: 5px 16px; }
+/* A chat a scheduled run used while it was off screen. */
+.chat-unread { flex: none; align-self: center; width: 7px; height: 7px; margin-left: 6px; border-radius: 50%; background: #3b82f6; }
+.chat-list li:hover .chat-unread { visibility: hidden; }

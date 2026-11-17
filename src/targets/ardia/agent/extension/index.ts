@@ -11,6 +11,7 @@ import { resizeImage, type ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import { Type } from "typebox";
 import { registerDate } from "../../../../agent/lib/date";
 import { registerEnvironment } from "../../../../agent/lib/environment";
+import { registerSchedule } from "../../../../agent/lib/schedule";
 import { MAX_CHARS, READ_PAGE, locateImage, text, truncate, fetchImage } from "../../../../agent/lib/page";
 import { BROWSER_GUIDE } from "./guide";
 
@@ -109,6 +110,7 @@ const TAB_PARAMS = {
 export default function (pi: ExtensionAPI) {
   registerDate(pi);
   registerEnvironment(pi);
+  registerSchedule(pi);
   pi.on("before_agent_start", (event) => {
     event.systemPromptOptions.sections = { ...event.systemPromptOptions.sections, browser: BROWSER_GUIDE };
   });

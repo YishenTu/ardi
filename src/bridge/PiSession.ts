@@ -12,7 +12,7 @@ import { PiInput } from "./PiInput";
 import { buildPiLaunchSpec, prepareWorkDir, type PiTarget } from "./launch";
 import { toModelInfo } from "./models";
 import { createPiEventNormalizationState, normalizePiRPCEvent } from "./normalization/piEventNormalization";
-import type { BridgeEvent } from "./protocol";
+import { SCHEDULE_DIALOG, type BridgeEvent, type ScheduleReply } from "./protocol";
 import { PiProcess } from "./runtime/PiProcess";
 import { PiRPCTransport } from "./runtime/PiRPCTransport";
 
@@ -93,6 +93,11 @@ export class PiSession {
     });
   }
 
+  // The extension's answer to a `schedule_request`, back to pi's tool.
+  scheduleReply({ id, result, error }: ScheduleReply): void {
+    this.transport?.send({ type: "extension_ui_response", id, value: JSON.stringify(error === undefined ? { result } : { error }) });
+  }
+
   shutdown(): Promise<void> {
     const { phase } = this;
     this.phase = { state: "stopped" };
@@ -123,11 +128,12 @@ export class PiSession {
     const transport = new PiRPCTransport({ input: proc.stdout, output: proc.stdin });
     proc.onClose((error) => this.fail(error ?? new Error("pi exited"), proc.stderrSnapshot));
     const normalization = createPiEventNormalizationState();
-    transport.onEvent((event) =>
+    transport.onEvent((event) => {
+      if (this.forwardSchedule(event)) return;
       this.input.observe(event, () => {
         for (const chunk of normalizePiRPCEvent(event, normalization)) this.send({ type: "chunk", chunk });
-      }),
-    );
+      });
+    });
     transport.start();
     this.phase = { state: "running", process: proc, transport };
 
@@ -137,6 +143,18 @@ export class PiSession {
     this.commands = commands.map(({ name, description }) => ({ name, description }));
     await this.reportSession(resumeFile);
     this.input.connect(transport);
+  }
+
+  // A `schedule` tool request (see SCHEDULE_DIALOG) goes to the extension.
+  private forwardSchedule(event: Record<string, unknown>): boolean {
+    if (event.type !== "extension_ui_request" || event.method !== "editor" || event.title !== SCHEDULE_DIALOG) return false;
+    const id = String(event.id);
+    try {
+      this.send({ type: "schedule_request", id, request: JSON.parse(String(event.prefill)) });
+    } catch {
+      this.scheduleReply({ type: "schedule_reply", id, error: "Invalid schedule request" });
+    }
+    return true;
   }
 
   // Proves pi is on the requested session, then reports it with its history.

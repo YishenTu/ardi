@@ -13,6 +13,9 @@
         <span class="chat-title-text" id="title">New chat</span>
         <svg class="chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5" /></svg>
       </button>
+      <button class="icon-btn" id="schedule-open" title="Scheduled" aria-label="Scheduled">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5" /><path d="M8 5v3l2 1.5" /></svg>
+      </button>
       <button class="icon-btn" id="settings-open" title="Settings" aria-label="Settings">
         <svg viewBox="0 0 24 24" class="gear" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" /><circle cx="12" cy="12" r="3" /></svg>
       </button>
@@ -33,6 +36,7 @@
           <button type="button" data-prompt="Summarize the page I'm on.">Summarize this page</button>
           <button type="button" data-prompt="Explain the hardest part of this page in plain words.">Explain this page</button>
           <button type="button" data-prompt="Find my open tabs related to the page I'm on and connect the dots: what do they add up to together?">Connect the dots</button>
+          <button type="button" id="schedule-suggest">Schedule a task</button>
         </div>
       </section>
     </main>
@@ -57,6 +61,56 @@
     <div class="options" id="options" popover></div>
 
     <div class="lightbox" id="lightbox" hidden><img alt="" /></div>
+
+    <section class="settings schedule" id="schedule" hidden>
+      <header class="bar">
+        <button class="icon-btn" id="schedule-back" title="Back" aria-label="Back">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9.5 4 5.5 8l4 4" /></svg>
+        </button>
+        <h2 id="schedule-heading">Scheduled</h2>
+        <button class="icon-btn" id="job-new" title="New job" aria-label="New job">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9" /></svg>
+        </button>
+        <button class="icon-btn" id="job-pause" title="Pause" aria-label="Pause or resume" hidden></button>
+        <button class="icon-btn" id="job-delete" title="Delete" aria-label="Delete" hidden>
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 4.5h9M6.5 4.5V3h3v1.5M5 4.5l.5 8h5l.5-8" /></svg>
+        </button>
+      </header>
+      <div class="settings-body">
+        <div id="job-list-view">
+          <div class="group" id="job-list"></div>
+          <p class="job-empty">No scheduled jobs. Add one with +, or ask Ardi in a chat.</p>
+        </div>
+        <form id="job-form" hidden>
+          <section class="settings-section">
+            <h3><label for="job-title">Title</label></h3>
+            <input class="text-input job-input" id="job-title" type="text" autocomplete="off" placeholder="Name this job" />
+          </section>
+          <section class="settings-section">
+            <h3><label for="job-prompt">Prompt</label></h3>
+            <textarea class="text-input job-input" id="job-prompt" rows="4" placeholder="What should Ardi do?"></textarea>
+          </section>
+          <section class="settings-section">
+            <h3>When</h3>
+            <div class="group"><div class="row stack">
+              <div class="effort" id="job-kind" role="radiogroup" aria-label="How often"></div>
+              <div class="days" id="job-days" role="group" aria-label="Days"></div>
+              <label class="field-row"><span>Date</span><input class="text-input" id="job-date" type="date" /></label>
+              <label class="field-row"><span>Every</span><span><input class="text-input" id="job-every" type="number" min="1" /> hours</span></label>
+              <label class="field-row"><span>Time</span><input class="text-input" id="job-time" type="time" /></label>
+            </div></div>
+          </section>
+          <section class="settings-section">
+            <h3><label for="job-model">Model</label></h3>
+            <div class="group"><div class="row stack">
+              <select class="text-input" id="job-model"></select>
+              <div class="effort" id="job-effort" role="radiogroup" aria-label="Effort"></div>
+            </div></div>
+          </section>
+          <div class="job-cta"><button type="submit" class="btn primary" id="job-save">Create</button></div>
+        </form>
+      </div>
+    </section>
 
     <section class="settings" id="settings" hidden>
       <header class="bar">

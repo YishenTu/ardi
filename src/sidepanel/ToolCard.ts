@@ -21,6 +21,7 @@ const TOOLS: Record<string, { label: string; view?: View }> = {
   ardia_exec: { label: "Ran in browser", view: "code" },
   browser_exec: { label: "Ran in browser", view: "code" },
   userscript: { label: "Userscript" },
+  schedule: { label: "Scheduled" },
   read: { label: "Read", view: "files" },
   write: { label: "Wrote", view: "write" },
   edit: { label: "Edited", view: "edit" },

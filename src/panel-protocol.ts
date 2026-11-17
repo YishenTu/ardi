@@ -2,6 +2,7 @@ import type { PiCheck } from "./bridge/protocol";
 import type { TabMention } from "./mention";
 // So the panel gets it from here, not from the bridge.
 export type { PiCheck };
+import type { Job, JobDraft } from "./schedule";
 import type { ChatChunk, ChatMessage, ImageAttachment, ModelState, PiCommand, QueueAction, QueuedMessage, ThinkingLevel } from "./chat";
 
 // Port name the side panel uses to connect to the background.
@@ -16,6 +17,8 @@ export type SessionMeta = {
   id: number;
   title: string;
   piSessionFile?: string;
+  // A scheduled run happened here while it was off screen; cleared once opened.
+  unread?: boolean;
   createdAt: number;
   updatedAt: number;
 };
@@ -65,12 +68,19 @@ export type PanelQuestion =
   // always saves), then restarts pi if it works.
   | { kind: "set_pi_path"; piPath: string }
   // The tabs the @ menu may list; null for any web page tab.
-  | { kind: "mention_tabs" };
+  | { kind: "mention_tabs" }
+  // Scheduled jobs: list, create or change (pause too), delete.
+  | { kind: "list_jobs" }
+  | { kind: "save_job"; job: JobDraft }
+  | { kind: "delete_job"; id: string };
 
 // The answer to each kind of PanelQuestion.
 export type PanelAnswers = {
   get_settings: { settings: Settings; check: PiCheck };
   set_pi_path: { saved: boolean; check: PiCheck };
   mention_tabs: { tabs: TabMention[] | null };
+  list_jobs: { jobs: Job[] };
+  save_job: { job: Job };
+  delete_job: { deleted: boolean };
 };
 

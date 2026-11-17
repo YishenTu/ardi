@@ -1,4 +1,4 @@
-import type { ChatChunk } from "../chat";
+import type { ChatChunk, ModelState } from "../chat";
 import type { PiStatus, SessionMeta } from "../panel-protocol";
 import { Attachments } from "./Attachments";
 import { ChatView } from "./ChatView";
@@ -8,6 +8,7 @@ import { closeLightbox } from "./lightbox";
 import { ModelPicker } from "./ModelPicker";
 import { PiClient } from "./pi";
 import { QueueView } from "./QueueView";
+import { ScheduleView } from "./ScheduleView";
 import { SettingsView } from "./SettingsView";
 import { SlashMenu } from "./SlashMenu";
 import { TabMenu } from "./TabMenu";
@@ -72,6 +73,7 @@ function renderSessions(sessions: SessionMeta[], currentId: number, running: num
       const working = running.includes(s.id);
       open.append(el("span", "", s.title || "New chat"), working ? el("i", "chat-running") : el("time", "", when(s.updatedAt)));
       if (working) open.title = "Working";
+      if (s.unread && !working) open.append(el("i", "chat-unread"));
       open.addEventListener("click", () => {
         chats.hidePopover();
         if (s.id !== currentId) pi.send({ kind: "switch_session", id: s.id });
@@ -107,7 +109,10 @@ const pi = new PiClient({
     view.renderHistory(history ?? []);
     live.forEach(applyLive);
   },
-  model: (state) => picker.render(state),
+  model: (state) => {
+    modelState = state;
+    picker.render(state);
+  },
   commands: (commands) => slash.setCommands(commands),
   live: applyLive,
   queue: (queue) => queueView.render(queue),
@@ -249,6 +254,11 @@ const queueView = new QueueView($("queue"), (action) => pi.send({ kind: "queue_a
 const tabMenu = new TabMenu(input, $("tab-menu"));
 
 const settings = new SettingsView($("settings"));
+// What pi last reported, for the job form's model picker.
+let modelState: ModelState = { models: [] };
+const schedule = new ScheduleView($("schedule"), () => modelState);
+$("schedule-open").addEventListener("click", () => void schedule.open());
+$("schedule-suggest").addEventListener("click", () => void schedule.create());
 $("ardi-version").textContent = chrome.runtime.getManifest().version;
 $("settings-open").addEventListener("click", () => void settings.open());
 
@@ -277,7 +287,7 @@ document.addEventListener("selectionchange", () => void tabMenu.update());
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && closeLightbox()) return;
   // An open menu takes Esc first (it closes itself).
-  if (e.key === "Escape" && busy && !settings.isOpen && !document.querySelector(":popover-open")) pi.send({ kind: "abort" });
+  if (e.key === "Escape" && busy && !settings.isOpen && !schedule.isOpen && !document.querySelector(":popover-open")) pi.send({ kind: "abort" });
 });
 $("new").addEventListener("click", () => {
   pi.send({ kind: "new_session" });
@@ -287,7 +297,7 @@ $("restart").addEventListener("click", () => pi.send({ kind: "restart" }));
 chats.addEventListener("toggle", (e) => {
   chatsToggle.setAttribute("aria-expanded", String(e.newState === "open"));
 });
-for (const button of document.querySelectorAll<HTMLButtonElement>(".suggestions button")) {
+for (const button of document.querySelectorAll<HTMLButtonElement>(".suggestions button[data-prompt]")) {
   button.addEventListener("click", () => send(button.dataset.prompt!));
 }
 

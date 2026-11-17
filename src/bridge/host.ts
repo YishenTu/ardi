@@ -40,10 +40,13 @@ export async function runBridge(target: BridgeTarget): Promise<void> {
 
   onExtensionMessage(
     joinParts<BridgeRequest>((request) => {
-      if (request.type !== "browser_reply") session.received();
+      // Replies answer pi, not the user: they aren't counted as requests.
+      if (request.type !== "browser_reply" && request.type !== "schedule_reply") session.received();
       switch (request.type) {
         case "browser_reply":
           return relay?.reply(request);
+        case "schedule_reply":
+          return session.scheduleReply(request);
         case "start":
           return session.start(request.sessionFile, request.piPath);
         case "check_pi":

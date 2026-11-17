@@ -4,6 +4,8 @@ import { plainMentions } from "../mention";
 import { restoreOf } from "../restore";
 import { joinParts, postInParts } from "../parts";
 import type { PanelUpdate, PiStatus, SessionMeta } from "../panel-protocol";
+import type { Job } from "../schedule";
+import * as schedules from "./schedules";
 import { loadSettings } from "./settings";
 import * as store from "./store";
 import { target, type BrowserLink } from "./target";
@@ -308,6 +310,15 @@ async function onBridgeEvent(c: Chat, conn: Live, event: Exclude<BridgeEvent, { 
       giveBack(c, [...conn.unanswered.values()]);
       conn.unanswered.clear();
       break;
+    case "schedule_request": {
+      const reply = await schedules.answerTool(event.request, { chatId: c.meta.id, model: c.model }).then(
+        (result) => ({ result }),
+        (error: unknown) => ({ error: error instanceof Error ? error.message : String(error) }),
+      );
+      // A reply answers pi's tool, not the user: not counted in `sent`.
+      if (live(c) === conn) postInParts(conn.port, { type: "schedule_reply", id: event.id, ...reply });
+      break;
+    }
     case "pi_check":
     case "tabs":
       // Only sent to the one-shot ports of ask-bridge.ts.
@@ -393,6 +404,10 @@ async function switchTo(next: SessionMeta, { stopLeft = false } = {}) {
   const back = isDraft(next) ? undefined : [...away].find((c) => c.meta.id === next.id);
   if (back) away.delete(back);
   chat = back ?? opened(next);
+  if (chat.meta.unread) {
+    chat.meta.unread = false;
+    await store.putSession(chat.meta);
+  }
   void chrome.storage.local.set({ [CURRENT_CHAT]: next.id });
   broadcast(replay());
   if (stopLeft) stop(left);
@@ -418,6 +433,7 @@ export const deleteSession = inOrder(async (id: number) => {
   await ready;
   await store.deleteSession(id);
   dropHeld(id);
+  await schedules.dropCheckBacks(id);
   for (const c of away) {
     if (c.meta.id !== id) continue;
     stop(c);
@@ -428,10 +444,46 @@ export const deleteSession = inOrder(async (id: number) => {
   await switchTo(latest ?? draft(), { stopLeft: true });
 });
 
-export const prompt = inOrder(async (text: string, images?: ImageAttachment[], steer = false) => {
+export const prompt = inOrder(async (text: string, images?: ImageAttachment[], steer?: boolean) => {
   await ready;
   // The chat it was sent from, even if the user moves on meanwhile.
-  const c = chat;
+  await send(chat, text, images, steer);
+});
+
+// Runs a scheduled job: a check-back prompts its chat, any other job a new
+// chat named after it, on the job's model and effort. A chat off screen runs
+// in the background like one the user left, and is marked unread.
+export const runJob = inOrder(async (job: Job) => {
+  await ready;
+  let c: Chat | undefined;
+  if (job.chatId !== undefined) {
+    c = job.chatId === chat.meta.id ? chat : [...away].find((a) => a.meta.id === job.chatId);
+    if (!c) {
+      const meta = await store.getSession(job.chatId);
+      // The chat was deleted.
+      if (!meta) return;
+      c = opened(meta);
+    }
+  } else {
+    const now = Date.now();
+    c = opened(await store.addSession({ title: job.title.slice(0, TITLE_LEN), createdAt: now, updatedAt: now }));
+  }
+  if (c !== chat) {
+    away.add(c);
+    c.meta.unread = true;
+  }
+  await startChat(c);
+  if (job.chatId === undefined) {
+    if (job.model) post(c, { type: "set_model", provider: job.model.provider, modelId: job.model.id });
+    if (job.thinkingLevel) post(c, { type: "set_thinking_level", level: job.thinkingLevel });
+  }
+  await send(c, job.prompt);
+  await broadcastSessions();
+});
+
+// Sends a message to `c`'s pi, starting it if needed. A draft becomes a
+// stored chat named after its first message.
+async function send(c: Chat, text: string, images?: ImageAttachment[], steer = false) {
   await startChat(c);
   const origin = live(c);
   const accept = origin?.browser?.preparePrompt();
@@ -461,13 +513,14 @@ export const prompt = inOrder(async (text: string, images?: ImageAttachment[], s
   if (steer) request.steer = true;
   sentTo.sent++;
   postInParts(sentTo.port, request);
-});
+}
 
 export function queueAction({ action, index, text }: QueueAction) {
   post(chat, { type: "queue_action", action, index, text });
 }
 
 export function abort() {
+  if (chat && !isDraft(chat.meta)) void schedules.dropCheckBacks(chat.meta.id);
   if (chat) live(chat)?.browser?.cancel();
   post(chat, { type: "abort" });
 }
