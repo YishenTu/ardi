@@ -4,7 +4,7 @@ import { plainMentions } from "../mention";
 import { restoreOf } from "../restore";
 import { joinParts, postInParts } from "../parts";
 import type { PanelUpdate, PiStatus, SessionMeta } from "../panel-protocol";
-import { runMessage, type Job } from "../schedule";
+import { runMessage, type Scheduled } from "../schedule";
 import * as schedules from "./schedules";
 import { loadSettings } from "./settings";
 import * as store from "./store";
@@ -436,7 +436,7 @@ export const deleteSession = inOrder(async (id: number) => {
   await ready;
   await store.deleteSession(id);
   dropHeld(id);
-  await schedules.dropCheckBacks(id);
+  await schedules.dropCheckBack(id);
   for (const c of away) {
     if (c.meta.id !== id) continue;
     stop(c);
@@ -453,19 +453,19 @@ export const prompt = inOrder(async (text: string, images?: ImageAttachment[], s
   await send(chat, text, images, steer);
 });
 
-// Runs a scheduled job: a check-back prompts its chat, any other job a new
-// chat named after it, on the job's model and effort. A chat off screen runs
+// Runs what came due: a check-back prompts its chat; a job, a new chat named
+// after it, on the job's model and effort. A chat off screen runs
 // in the background like one the user left, and is marked unread.
-export const runJob = inOrder(async (job: Job) => {
+export const runJob = inOrder(async (run: Scheduled) => {
   await ready;
   // Storage first: once the chat is picked, nothing may wait until the prompt
   // is sent, or its bridge could report idle and be stopped meanwhile.
   const now = Date.now();
   let meta: SessionMeta | undefined;
-  if (job.chatId === undefined) {
-    meta = await store.addSession({ title: job.title.slice(0, TITLE_LEN), createdAt: now, updatedAt: now, unread: true });
+  if (run.kind === "job") {
+    meta = await store.addSession({ title: run.title.slice(0, TITLE_LEN), createdAt: now, updatedAt: now, unread: true });
   } else {
-    meta = await store.getSession(job.chatId);
+    meta = await store.getSession(run.chatId);
     // The chat was deleted.
     if (!meta) return;
     meta.updatedAt = now;
@@ -484,11 +484,11 @@ export const runJob = inOrder(async (job: Job) => {
   const conn = live(c);
   // pi couldn't start; the run is skipped.
   if (!conn) return;
-  if (job.chatId === undefined) {
-    if (job.model) post(c, { type: "set_model", provider: job.model.provider, modelId: job.model.id });
-    if (job.thinkingLevel) post(c, { type: "set_thinking_level", level: job.thinkingLevel });
+  if (run.kind === "job") {
+    if (run.model) post(c, { type: "set_model", provider: run.model.provider, modelId: run.model.id });
+    if (run.thinkingLevel) post(c, { type: "set_thinking_level", level: run.thinkingLevel });
   }
-  deliver(conn, runMessage(job), undefined, false, conn.browser?.preparePrompt());
+  deliver(conn, runMessage(run), undefined, false, conn.browser?.preparePrompt());
   await broadcastSessions();
 });
 

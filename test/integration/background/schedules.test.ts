@@ -76,7 +76,7 @@ describe("scheduled jobs", () => {
     const [chat] = await store.listSessions();
     expect(chat).toMatchObject({ title: "Invoice check", unread: true });
     // The job waits for its next time.
-    const [after] = await schedules.listJobs();
+    const [after] = await schedules.listScheduled();
     expect(after.next!).toBeGreaterThan(job.next!);
     expect(chromeFake.alarms.get(`job:${job.id}`)?.scheduledTime).toBe(after.next);
   });
@@ -109,7 +109,7 @@ describe("scheduled jobs", () => {
     chromeFake.sessionStorage.set("browserStart", job.next! + 1);
     expect(await fire(job.id)).toBeUndefined();
     expect(chromeFake.nativePorts).toHaveLength(0);
-    expect((await schedules.listJobs())[0].next!).toBeGreaterThan(job.next!);
+    expect((await schedules.listScheduled())[0].next!).toBeGreaterThan(job.next!);
   });
 
   test("an alarm for a time the job has since moved from doesn't run it", async () => {
@@ -118,12 +118,26 @@ describe("scheduled jobs", () => {
     const later = Date.now() + 3_600_000;
     await schedules.saveJob({ ...job, when: { kind: "once", at: later } });
     expect(await schedules.due(stale)).toBeUndefined();
-    expect(await schedules.listJobs()).toMatchObject([{ id: job.id, next: later }]);
+    expect(await schedules.listScheduled()).toMatchObject([{ id: job.id, next: later }]);
+  });
+
+  test("an alarm queued before the job was paused doesn't run it", async () => {
+    const job = await schedules.saveJob({ title: "Digest", prompt: "summarize", when: { kind: "daily", time: "09:00" } });
+    const queued = chromeFake.alarms.get(`job:${job.id}`)!;
+    await schedules.saveJob({ ...job, paused: true });
+    expect(await schedules.due(queued)).toBeUndefined();
+    expect(chromeFake.nativePorts).toHaveLength(0);
+  });
+
+  test("jobs saved in the earlier pre-release layout are left alone, never run", async () => {
+    chromeFake.storage.set("jobs", [{ id: "old", title: "Old", prompt: "x", when: { kind: "daily", time: "09:00" }, paused: false, next: 1 }]);
+    expect(await schedules.listScheduled()).toEqual([]);
+    expect(await schedules.due({ name: "job:old", scheduledTime: 1, persistAcrossSessions: false })).toBeUndefined();
   });
 
   test("a time that has already passed isn't saved", async () => {
     await expect(schedules.saveJob({ title: "Late", prompt: "x", when: { kind: "once", at: Date.now() - 1000 } })).rejects.toThrow(/passed/);
-    expect(await schedules.listJobs()).toEqual([]);
+    expect(await schedules.listScheduled()).toEqual([]);
   });
 
   test("the run's bridge keeps its model, effort and prompt even if it reports idle while the run is set up", async () => {
@@ -152,7 +166,7 @@ describe("scheduled jobs", () => {
     expect(chromeFake.alarms.has(`job:${paused.id}`)).toBe(false);
     await fire(once.id);
     expect(bridge().sent.at(-1)).toMatchObject({ type: "prompt", text: "[Scheduled job: Renew]\n\nrenew the domain" });
-    expect((await schedules.listJobs()).map((j) => j.id)).toEqual([paused.id]);
+    expect((await schedules.listScheduled()).map((j) => j.id)).toEqual([paused.id]);
   });
 });
 
@@ -163,21 +177,22 @@ describe("pi's check_back tool", () => {
     const { meta } = await storedChat();
     const at = Date.now() + 10 * 60_000;
     expect((await checkBack("is the deploy done?", undefined, at)).error).toBeUndefined();
-    expect(await schedules.listJobs()).toMatchObject([{ chatId: meta.id, prompt: "is the deploy done?", when: { kind: "once", at }, next: at }]);
+    // A check-back keeps only what it needs: no title, model or pause of its own.
+    expect(await schedules.listScheduled()).toEqual([{ kind: "check_back", id: expect.any(String), chatId: meta.id, note: "is the deploy done?", next: at }]);
 
     await checkBack("check the deploy again");
-    expect(await schedules.listJobs()).toMatchObject([{ chatId: meta.id, prompt: "check the deploy again" }]);
+    expect(await schedules.listScheduled()).toMatchObject([{ kind: "check_back", chatId: meta.id, note: "check the deploy again" }]);
     await tool({ op: "cancel_check_back" });
-    expect(await schedules.listJobs()).toEqual([]);
+    expect(await schedules.listScheduled()).toEqual([]);
     expect(chromeFake.alarms.size).toBe(0);
   });
 
   test("two check-backs asked at once still leave one; a cancel asked with one leaves none", async () => {
     const { port } = await storedChat();
     await Promise.all([checkBack("a", port), checkBack("b", port)]);
-    expect(await schedules.listJobs()).toHaveLength(1);
+    expect(await schedules.listScheduled()).toHaveLength(1);
     await Promise.all([checkBack("c", port), tool({ op: "cancel_check_back" }, port)]);
-    expect(await schedules.listJobs()).toEqual([]);
+    expect(await schedules.listScheduled()).toEqual([]);
   });
 
   test("a check-back into a chat whose pi is still up off screen keeps tracking it, even if it reports idle meanwhile", async () => {
@@ -193,7 +208,7 @@ describe("pi's check_back tool", () => {
       return put(m);
     });
     try {
-      const [job] = await schedules.listJobs();
+      const [job] = await schedules.listScheduled();
       await fire(job.id);
     } finally {
       spy.mockRestore();
@@ -211,7 +226,7 @@ describe("pi's check_back tool", () => {
     await pi.newSession();
     await waitFor(() => expect(port.disconnected).toBe(true));
 
-    const [job] = await schedules.listJobs();
+    const [job] = await schedules.listScheduled();
     await fire(job.id);
     expect(bridge()).not.toBe(port);
     expect(bridge().sent[0]).toEqual({ type: "start", sessionFile: meta.piSessionFile, piPath: undefined });
@@ -224,10 +239,10 @@ describe("pi's check_back tool", () => {
     await checkBack("a", first.port);
     pi.abort();
     await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(await schedules.listJobs()).toHaveLength(1);
+    expect(await schedules.listScheduled()).toHaveLength(1);
 
     await pi.deleteSession(first.meta.id);
-    await waitFor(async () => expect(await schedules.listJobs()).toEqual([]));
+    await waitFor(async () => expect(await schedules.listScheduled()).toEqual([]));
   });
 });
 
@@ -236,13 +251,13 @@ describe("pi's schedule_job tool", () => {
     await storedChat();
     await tool({ op: "create", job: { title: "Inbox", prompt: "check inbox", when: { kind: "weekdays", time: "09:00" } } });
     await tool({ op: "create", job: { title: "Renew", prompt: "renew the domain", when: { kind: "once", at: Date.now() + 60_000 } } });
-    const jobs = await schedules.listJobs();
+    const jobs = await schedules.listScheduled();
     expect(jobs).toMatchObject([{ title: "Inbox", model: MODEL.current, thinkingLevel: "high" }, { title: "Renew" }]);
-    expect(jobs.every((j) => j.chatId === undefined)).toBe(true);
+    expect(jobs.every((j) => j.kind === "job")).toBe(true);
 
     expect((await tool({ op: "list" })).result).toMatchObject([{ id: jobs[0].id, title: "Inbox" }, { title: "Renew" }]);
     await tool({ op: "cancel", id: jobs[0].id });
-    expect((await schedules.listJobs()).map((j) => j.title)).toEqual(["Renew"]);
+    expect((await schedules.scheduledJobs()).map((j) => j.title)).toEqual(["Renew"]);
   });
 
   test("the Scheduled view lists only jobs, not check-backs", async () => {

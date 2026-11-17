@@ -27,7 +27,7 @@ function background() {
     if (req.kind === "list_jobs") return { jobs };
     if (req.kind === "save_job" && req.job.when.kind === "once" && req.job.when.at < Date.now()) return { error: "That time has already passed" };
     if (req.kind === "save_job") {
-      const job: Job = { paused: false, ...req.job, id: req.job.id ?? `j${jobs.length + 1}`, next: Date.now() + 1000 };
+      const job: Job = { kind: "job", paused: false, ...req.job, id: req.job.id ?? `j${jobs.length + 1}`, next: Date.now() + 1000 };
       jobs = [...jobs.filter((j) => j.id !== job.id), job];
       return { job };
     }
@@ -46,7 +46,7 @@ const choose = (group: string, label: string) =>
 
 beforeEach(() => {
   loadPanel();
-  jobs = [{ id: "j1", title: "Invoice check", prompt: "find invoices", when: { kind: "weekdays", time: "09:00" }, model: { provider: "p", id: "haiku" }, thinkingLevel: "low", paused: false }];
+  jobs = [{ kind: "job", id: "j1", title: "Invoice check", prompt: "find invoices", when: { kind: "weekdays", time: "09:00" }, model: { provider: "p", id: "haiku" }, thinkingLevel: "low", paused: false }];
   background();
   view = new ScheduleView($("schedule"), () => MODELS);
 });

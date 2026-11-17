@@ -51,11 +51,11 @@ describe("described in words", () => {
 });
 
 describe("a run's message", () => {
-  const job = { id: "j", title: "Invoice check", prompt: "find new invoices\n\nand totals", when: { kind: "daily" as const, time: "09:00" }, paused: false };
+  const job = { kind: "job" as const, id: "j", title: "Invoice check", prompt: "find new invoices\n\nand totals", when: { kind: "daily" as const, time: "09:00" }, paused: false };
 
   test("reads back as the run it came from; anything else is the user's own", () => {
     expect(parseRunMessage(runMessage(job))).toEqual({ kind: "job", title: "Invoice check", prompt: "find new invoices\n\nand totals" });
-    expect(parseRunMessage(runMessage({ ...job, prompt: "is it done?", chatId: 1 }))).toEqual({ kind: "check_back", note: "is it done?" });
+    expect(parseRunMessage(runMessage({ kind: "check_back", id: "c", chatId: 1, note: "is it done?", next: 1 }))).toEqual({ kind: "check_back", note: "is it done?" });
     expect(parseRunMessage("what's [Check-back] for?")).toBeUndefined();
   });
 });

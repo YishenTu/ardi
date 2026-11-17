@@ -12,7 +12,13 @@ export type When =
   | { kind: "weekdays"; time: string }
   | { kind: "weekly"; days: number[]; time: string };
 
+// What the background stores: jobs (the Scheduled view and schedule_job)
+// and check-backs (check_back), each with an alarm for its next run.
+export type Scheduled = Job | CheckBack;
+
+// Runs in a new chat each time.
 export type Job = {
+  kind: "job";
   id: string;
   title: string;
   prompt: string;
@@ -21,11 +27,13 @@ export type Job = {
   model?: { provider: string; id: string };
   thinkingLevel?: ThinkingLevel;
   paused: boolean;
-  // A check-back: runs in this chat instead of a new one.
-  chatId?: number;
-  // The next run (ms since epoch); unset once there's none.
+  // The next run (ms since epoch).
   next?: number;
 };
+
+// The model's own follow-up: `note` comes back to its chat at `next`. One per
+// chat.
+export type CheckBack = { kind: "check_back"; id: string; chatId: number; note: string; next: number };
 
 // What the panel and the tool send to make or change a job; the background
 // fills in the rest.
@@ -67,7 +75,7 @@ function runsOn(when: When, weekday: number): boolean {
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const DAY_PLURALS = ["Sundays", "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays"];
 
-export function hhmm(ts: number): string {
+function hhmm(ts: number): string {
   const date = new Date(ts);
   return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 }
@@ -103,8 +111,8 @@ export type ScheduleRequest =
 
 // The message a run sends pi, so it knows who's asking: itself, following
 // up in this chat, or a job running with no one watching.
-export function runMessage(job: Job): string {
-  return job.chatId === undefined ? `[Scheduled job: ${job.title}]\n\n${job.prompt}` : `[Check-back] ${job.prompt}`;
+export function runMessage(run: Scheduled): string {
+  return run.kind === "job" ? `[Scheduled job: ${run.title}]\n\n${run.prompt}` : `[Check-back] ${run.note}`;
 }
 
 // A message `runMessage` wrote, read back (the chat shows it as a card);
