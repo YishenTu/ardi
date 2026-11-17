@@ -25,6 +25,7 @@ function background() {
   chromeFake.onSendMessage = async (req: PanelQuestion) => {
     asked.push(req);
     if (req.kind === "list_jobs") return { jobs };
+    if (req.kind === "save_job" && req.job.when.kind === "once" && req.job.when.at < Date.now()) return { error: "That time has already passed" };
     if (req.kind === "save_job") {
       const job: Job = { paused: false, ...req.job, id: req.job.id ?? `j${jobs.length + 1}`, next: Date.now() + 1000 };
       jobs = [...jobs.filter((j) => j.id !== job.id), job];
@@ -94,5 +95,18 @@ describe("Scheduled view", () => {
     field<HTMLInputElement>("job-title").value = "No prompt";
     $("job-save").click();
     expect(asked.some((r) => r.kind === "save_job")).toBe(false);
+  });
+
+  test("a job the background refuses stays in the form with the reason", async () => {
+    await view.open();
+    $("job-new").click();
+    field<HTMLInputElement>("job-title").value = "Late";
+    field<HTMLTextAreaElement>("job-prompt").value = "x";
+    choose("job-kind", "Once");
+    field<HTMLInputElement>("job-date").value = "2020-01-01";
+    field<HTMLInputElement>("job-time").value = "09:00";
+    $("job-save").click();
+    await waitFor(() => expect($("job-error").textContent).toBe("That time has already passed"));
+    expect($("job-form").hidden).toBe(false);
   });
 });

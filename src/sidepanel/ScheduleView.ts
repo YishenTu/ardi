@@ -44,6 +44,7 @@ export class ScheduleView {
   private readonly every: HTMLInputElement;
   private readonly model: HTMLSelectElement;
   private readonly effort: HTMLElement;
+  private readonly error: HTMLElement;
   private jobs: Job[] = [];
   // The job the form edits; undefined for a new one.
   private editing: Job | undefined;
@@ -68,6 +69,7 @@ export class ScheduleView {
     this.every = $("job-every");
     this.model = $("job-model");
     this.effort = $("job-effort");
+    this.error = $("job-error");
 
     for (const { kind, label } of KINDS) this.kinds.append(this.radio(label, () => this.setKind(kind)));
     for (const label of DAYS) {
@@ -181,6 +183,7 @@ export class ScheduleView {
   // model and effort the current chat is on.
   private edit(job: Job | undefined) {
     this.editing = job;
+    this.error.textContent = "";
     this.listView.hidden = true;
     this.form.hidden = false;
     this.heading.textContent = job ? "Job" : "New job";
@@ -276,8 +279,9 @@ export class ScheduleView {
       ...(provider && { model: { provider, id: id.join("/") } }),
       ...(this.level && { thinkingLevel: this.level }),
     };
-    await askBackground({ kind: "save_job", job });
-    await this.showList();
+    const { error } = await askBackground({ kind: "save_job", job });
+    this.error.textContent = error ?? "";
+    if (!error) await this.showList();
   }
 
   private radio(label: string, pick: () => void): HTMLButtonElement {

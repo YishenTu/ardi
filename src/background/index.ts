@@ -81,7 +81,10 @@ async function answer(req: PanelQuestion) {
     case "list_jobs":
       return { jobs: await schedules.scheduledJobs() } satisfies PanelAnswers["list_jobs"];
     case "save_job":
-      return { job: await schedules.saveJob(req.job) } satisfies PanelAnswers["save_job"];
+      return schedules.saveJob(req.job).then(
+        (job) => ({ job }) satisfies PanelAnswers["save_job"],
+        (error: unknown) => ({ error: error instanceof Error ? error.message : String(error) }) satisfies PanelAnswers["save_job"],
+      );
     case "delete_job":
       return { deleted: await schedules.deleteJob(req.id) } satisfies PanelAnswers["delete_job"];
   }

@@ -2,7 +2,7 @@
 // its pi session when their alarm fires, with or without a panel open.
 import "../../support/indexeddb";
 
-import { beforeEach, describe, expect, test } from "bun:test";
+import { beforeEach, describe, expect, spyOn, test } from "bun:test";
 
 import { chromeFake, FakePort } from "../../support/chrome";
 import { waitFor } from "../../support/wait";
@@ -94,12 +94,56 @@ describe("scheduled jobs", () => {
     expect((await store.listSessions())[0].unread).toBeFalsy();
   });
 
+  test("a run's chat that the panel opens on after a worker restart is no longer unread", async () => {
+    const job = await schedules.saveJob({ title: "Digest", prompt: "summarize", when: { kind: "daily", time: "09:00" } });
+    await fire(job.id);
+    pi = (await import(`../../../src/background/pi-session.ts?schedules=${copies++}`)) as Background;
+    const panel = new FakePort("panel");
+    await pi.attachPanel(panel.port);
+    await waitFor(async () => expect((await store.listSessions())[0].unread).toBeFalsy());
+  });
+
   test("a run missed while the browser was quit is skipped, and the job waits for its next time", async () => {
     const job = await schedules.saveJob({ title: "Digest", prompt: "summarize", when: { kind: "daily", time: "09:00" } });
-    // Due before this browser session started.
-    expect(await fire(job.id, Date.now() - 3_600_000)).toBeUndefined();
+    // The browser session started after the run was due.
+    chromeFake.sessionStorage.set("browserStart", job.next! + 1);
+    expect(await fire(job.id)).toBeUndefined();
     expect(chromeFake.nativePorts).toHaveLength(0);
-    expect((await schedules.listJobs())[0].next!).toBeGreaterThan(Date.now());
+    expect((await schedules.listJobs())[0].next!).toBeGreaterThan(job.next!);
+  });
+
+  test("an alarm for a time the job has since moved from doesn't run it", async () => {
+    const job = await schedules.saveJob({ title: "Renew", prompt: "renew", when: { kind: "once", at: Date.now() + 60_000 } });
+    const stale = chromeFake.alarms.get(`job:${job.id}`)!;
+    const later = Date.now() + 3_600_000;
+    await schedules.saveJob({ ...job, when: { kind: "once", at: later } });
+    expect(await schedules.due(stale)).toBeUndefined();
+    expect(await schedules.listJobs()).toMatchObject([{ id: job.id, next: later }]);
+  });
+
+  test("a time that has already passed isn't saved", async () => {
+    await expect(schedules.saveJob({ title: "Late", prompt: "x", when: { kind: "once", at: Date.now() - 1000 } })).rejects.toThrow(/passed/);
+    expect(await schedules.listJobs()).toEqual([]);
+  });
+
+  test("the run's bridge keeps its model, effort and prompt even if it reports idle while the run is set up", async () => {
+    // An idle report for what the bridge had, as soon as anything else can run.
+    chromeFake.onConnectNative = (port) => {
+      port.onPost = (message: { type: string }) => {
+        if (message.type !== "set_thinking_level") return;
+        const requests = received(port);
+        queueMicrotask(() => port.receive({ type: "busy", busy: false, requests }));
+      };
+    };
+    const job = await schedules.saveJob({
+      title: "Invoice check", prompt: "find new invoices", when: { kind: "daily", time: "09:00" },
+      model: { provider: "fake", id: "m2" }, thinkingLevel: "high",
+    });
+    await fire(job.id);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(chromeFake.nativePorts).toHaveLength(1);
+    expect(bridge().disconnected).toBe(false);
+    expect(bridge().sent.map((r: { type: string }) => r.type)).toEqual(["start", "set_model", "set_thinking_level", "prompt"]);
   });
 
   test("a one-time job runs once and is gone; a paused job doesn't run", async () => {
@@ -126,6 +170,38 @@ describe("pi's check_back tool", () => {
     await tool({ op: "cancel_check_back" });
     expect(await schedules.listJobs()).toEqual([]);
     expect(chromeFake.alarms.size).toBe(0);
+  });
+
+  test("two check-backs asked at once still leave one; a cancel asked with one leaves none", async () => {
+    const { port } = await storedChat();
+    await Promise.all([checkBack("a", port), checkBack("b", port)]);
+    expect(await schedules.listJobs()).toHaveLength(1);
+    await Promise.all([checkBack("c", port), tool({ op: "cancel_check_back" }, port)]);
+    expect(await schedules.listJobs()).toEqual([]);
+  });
+
+  test("a check-back into a chat whose pi is still up off screen keeps tracking it, even if it reports idle meanwhile", async () => {
+    const { meta, port } = await storedChat();
+    await checkBack("is it done?", port, Date.now() + 60_000);
+    // Still working when the user moves on, so its bridge stays up off screen.
+    fromBridge({ type: "busy", busy: true, requests: received(port) }, port);
+    await pi.newSession();
+    // It reports idle while the check-back is being stored.
+    const put = store.putSession;
+    const spy = spyOn(store, "putSession").mockImplementation(async (m) => {
+      if (m.id === meta.id) idle(port);
+      return put(m);
+    });
+    try {
+      const [job] = await schedules.listJobs();
+      await fire(job.id);
+    } finally {
+      spy.mockRestore();
+    }
+    const ports = chromeFake.nativePorts.length;
+    await pi.switchSession(meta.id);
+    expect(chromeFake.nativePorts).toHaveLength(ports);
+    expect(bridge().sent.at(-1)).toMatchObject({ type: "prompt", text: "[Check-back] is it done?" });
   });
 
   test("a check-back prompts its chat after the user moved on, marked as one, and marks the chat unread", async () => {

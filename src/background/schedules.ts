@@ -49,18 +49,34 @@ export async function noteBrowserStart(): Promise<number> {
 }
 
 // Creates a job, or updates the one with `draft.id`, and arms its next run.
+// Refuses a time that has already passed: the job would never run.
 export function saveJob(draft: JobDraft & { chatId?: number }): Promise<Job> {
   return inOrder(async () => {
     const jobs = await listJobs();
-    const old = jobs.find((j) => j.id === draft.id);
-    const job: Job = {
-      ...old,
-      ...draft,
-      id: old?.id ?? crypto.randomUUID(),
-      paused: draft.paused ?? old?.paused ?? false,
-      next: nextRun(draft.when, Date.now()),
-    };
+    const job = build(jobs, draft);
+    const old = jobs.find((j) => j.id === job.id);
     await setJobs(old ? jobs.map((j) => (j === old ? job : j)) : [...jobs, job]);
+    await arm(job);
+    return job;
+  });
+}
+
+function build(jobs: Job[], draft: JobDraft & { chatId?: number }): Job {
+  const old = jobs.find((j) => j.id === draft.id);
+  const next = nextRun(draft.when, Date.now());
+  if (next === undefined) throw new Error("That time has already passed");
+  return { ...old, ...draft, id: old?.id ?? crypto.randomUUID(), paused: draft.paused ?? old?.paused ?? false, next };
+}
+
+// Sets `chatId`'s one check-back, replacing any it had, in one step so two
+// asked at once can't both stay.
+function setCheckBack(chatId: number, draft: JobDraft): Promise<Job> {
+  return inOrder(async () => {
+    const jobs = await listJobs();
+    const job = build(jobs, { ...draft, chatId });
+    const dropped = jobs.filter((j) => j.chatId === chatId);
+    await setJobs([...jobs.filter((j) => j.chatId !== chatId), job]);
+    for (const j of dropped) await chrome.alarms.clear(ALARM + j.id);
     await arm(job);
     return job;
   });
@@ -89,14 +105,15 @@ export function dropCheckBacks(chatId: number): Promise<void> {
 
 // A job's alarm fired: moves it on to its next run (a one-time job is done),
 // and returns it if it should run now. A run missed while the browser was
-// closed is skipped.
+// closed is skipped, and so is an alarm for a time the job has since moved
+// from (changed, or already run).
 export function due(alarm: chrome.alarms.Alarm): Promise<Job | undefined> {
   if (!alarm.name.startsWith(ALARM)) return Promise.resolve(undefined);
   const id = alarm.name.slice(ALARM.length);
   return inOrder(async () => {
     const jobs = await listJobs();
     const job = jobs.find((j) => j.id === id);
-    if (!job) return undefined;
+    if (!job || job.next !== alarm.scheduledTime) return undefined;
     const missed = alarm.scheduledTime < (await noteBrowserStart());
     const next = job.when.kind === "once" ? undefined : nextRun(job.when, Math.max(Date.now(), alarm.scheduledTime));
     if (next === undefined) {
@@ -130,10 +147,8 @@ export async function answerTool(request: ScheduleRequest, from: { chatId: numbe
   switch (request.op) {
     case "check_back": {
       if (!request.note) throw new Error("A check-back needs a note");
-      if (!(request.at > Date.now())) throw new Error("That time has already passed");
       // One per chat: a new one replaces it.
-      await dropCheckBacks(from.chatId);
-      const job = await saveJob({ title: request.note.slice(0, 60), prompt: request.note, when: { kind: "once", at: request.at }, chatId: from.chatId, ...model });
+      const job = await setCheckBack(from.chatId, { title: request.note.slice(0, 60), prompt: request.note, when: { kind: "once", at: request.at }, ...model });
       return { at: new Date(job.next!).toString() };
     }
     case "cancel_check_back":
@@ -142,7 +157,6 @@ export async function answerTool(request: ScheduleRequest, from: { chatId: numbe
     case "create": {
       const { title, prompt, when } = request.job;
       if (!title || !prompt || !when) throw new Error("A job needs a title, a prompt and when to run");
-      if (nextRun(when, Date.now()) === undefined) throw new Error("That time has already passed");
       return summary(await saveJob({ title, prompt, when, ...model }));
     }
     case "list":

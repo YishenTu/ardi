@@ -397,6 +397,12 @@ export async function restart() {
   await startChat(c);
 }
 
+// A panel shows `c`: what a scheduled run did there is no longer unread.
+async function seen(c: Chat) {
+  c.meta.unread = false;
+  await store.putSession(c.meta);
+}
+
 // Puts `next` on screen: back to its chat if pi still works on it, else a
 // fresh pi on its session. The chat left keeps its pi only while it's busy.
 async function switchTo(next: SessionMeta, { stopLeft = false } = {}) {
@@ -404,16 +410,13 @@ async function switchTo(next: SessionMeta, { stopLeft = false } = {}) {
   const back = isDraft(next) ? undefined : [...away].find((c) => c.meta.id === next.id);
   if (back) away.delete(back);
   chat = back ?? opened(next);
-  if (chat.meta.unread) {
-    chat.meta.unread = false;
-    await store.putSession(chat.meta);
-  }
   void chrome.storage.local.set({ [CURRENT_CHAT]: next.id });
   broadcast(replay());
   if (stopLeft) stop(left);
   if (busy(left)) away.add(left);
   else stop(left);
   void handOver();
+  if (chat.meta.unread) await seen(chat);
   await broadcastSessions();
   await startChat(chat);
 }
@@ -455,29 +458,37 @@ export const prompt = inOrder(async (text: string, images?: ImageAttachment[], s
 // in the background like one the user left, and is marked unread.
 export const runJob = inOrder(async (job: Job) => {
   await ready;
-  let c: Chat | undefined;
-  if (job.chatId !== undefined) {
-    c = job.chatId === chat.meta.id ? chat : [...away].find((a) => a.meta.id === job.chatId);
-    if (!c) {
-      const meta = await store.getSession(job.chatId);
-      // The chat was deleted.
-      if (!meta) return;
-      c = opened(meta);
-    }
+  // Storage first: once the chat is picked, nothing may wait until the prompt
+  // is sent, or its bridge could report idle and be stopped meanwhile.
+  const now = Date.now();
+  let meta: SessionMeta | undefined;
+  if (job.chatId === undefined) {
+    meta = await store.addSession({ title: job.title.slice(0, TITLE_LEN), createdAt: now, updatedAt: now, unread: true });
   } else {
-    const now = Date.now();
-    c = opened(await store.addSession({ title: job.title.slice(0, TITLE_LEN), createdAt: now, updatedAt: now }));
+    meta = await store.getSession(job.chatId);
+    // The chat was deleted.
+    if (!meta) return;
+    meta.updatedAt = now;
+    if (meta.id !== chat.meta.id) meta.unread = true;
+    await store.putSession(meta);
   }
+  const c = meta.id === chat.meta.id ? chat : ([...away].find((a) => a.meta.id === meta.id) ?? opened(meta));
   if (c !== chat) {
     away.add(c);
+    c.meta.updatedAt = now;
     c.meta.unread = true;
   }
+  // From here to the prompt nothing waits: a bridge that reports idle in
+  // between would be stopped as a chat off screen with nothing to do.
   await startChat(c);
+  const conn = live(c);
+  // pi couldn't start; the run is skipped.
+  if (!conn) return;
   if (job.chatId === undefined) {
     if (job.model) post(c, { type: "set_model", provider: job.model.provider, modelId: job.model.id });
     if (job.thinkingLevel) post(c, { type: "set_thinking_level", level: job.thinkingLevel });
   }
-  await send(c, runMessage(job));
+  deliver(conn, runMessage(job), undefined, false, conn.browser?.preparePrompt());
   await broadcastSessions();
 });
 
@@ -506,13 +517,18 @@ async function send(c: Chat, text: string, images?: ImageAttachment[], steer = f
   if (!sentTo) return giveBack(c, [{ text, images }]);
   // A restart during storage writes must not drop the message. Permission
   // callbacks belong to their original controller, not the replacement port.
+  deliver(sentTo, text, images, steer, origin?.port === sentTo.port ? accept : undefined);
+}
+
+// Posts a prompt to an open bridge; it waits in `unanswered` until pi answers.
+function deliver(conn: Live, text: string, images: ImageAttachment[] | undefined, steer: boolean, accept?: () => void) {
   const promptId = crypto.randomUUID();
-  sentTo.unanswered.set(promptId, { text, images, accept: origin?.port === sentTo.port ? accept : undefined });
+  conn.unanswered.set(promptId, { text, images, accept });
   // The chat shows it once pi starts it (a `user` chunk).
   const request: Extract<BridgeRequest, { type: "prompt" }> = { type: "prompt", text, images, promptId };
   if (steer) request.steer = true;
-  sentTo.sent++;
-  postInParts(sentTo.port, request);
+  conn.sent++;
+  postInParts(conn.port, request);
 }
 
 export function queueAction({ action, index, text }: QueueAction) {
@@ -540,6 +556,8 @@ export async function attachPanel(p: chrome.runtime.Port) {
   panels.add(p);
   p.onDisconnect.addListener(() => panels.delete(p));
   await ready;
+  // Only waits when there's something to clear, so a panel's replay isn't held up.
+  if (chat.meta.unread) await seen(chat);
   postInParts(p, replay());
   postInParts(p, await sessionsUpdate());
   await handOver(p);

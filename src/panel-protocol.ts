@@ -80,7 +80,8 @@ export type PanelAnswers = {
   set_pi_path: { saved: boolean; check: PiCheck };
   mention_tabs: { tabs: TabMention[] | null };
   list_jobs: { jobs: Job[] };
-  save_job: { job: Job };
+  // `error`: why it wasn't saved (a time that has passed).
+  save_job: { job?: Job; error?: string };
   delete_job: { deleted: boolean };
 };
 
