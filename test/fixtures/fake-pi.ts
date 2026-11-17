@@ -19,7 +19,7 @@
 // taken just before a clear_queue. Like pi, it expands "/skill:demo X" to
 // "expanded demo: X", and an image-only message it takes stays listed in its
 // queue (pi drops taken messages by text). A "schedule:" message asks the
-// client through an extension UI editor dialog, as Ardi's schedule tool does,
+// client through an extension UI editor dialog, as Ardi's scheduling tools do,
 // and replies with the answer.
 
 import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";

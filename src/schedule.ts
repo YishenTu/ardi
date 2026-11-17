@@ -1,5 +1,5 @@
 // Scheduled jobs, shared by the background (which stores and runs them), the
-// panel (which lists and edits them) and pi's `schedule` tool. Times are the
+// panel (which lists and edits them) and pi's check_back and schedule_job tools. Times are the
 // user's local time.
 import type { ThinkingLevel } from "./chat";
 
@@ -91,9 +91,26 @@ export function describeWhen(when: When): string {
   }
 }
 
-// What pi's `schedule` tool asks the background. `create` from the tool makes
-// a one-time job a check-back in the tool's chat.
+// What pi's tools ask the background. `check_back` and `cancel_check_back`
+// (the check_back tool) act on the asking chat's one check-back; the rest
+// (the schedule_job tool) on jobs, which always run in new chats.
 export type ScheduleRequest =
+  | { op: "check_back"; at: number; note: string }
+  | { op: "cancel_check_back" }
   | { op: "create"; job: Pick<Job, "title" | "prompt" | "when"> }
   | { op: "list" }
   | { op: "cancel"; id: string };
+
+// The message a run sends pi, so it knows who's asking: itself, following
+// up in this chat, or a job running with no one watching.
+export function runMessage(job: Job): string {
+  return job.chatId === undefined ? `[Scheduled job: ${job.title}]\n\n${job.prompt}` : `[Check-back] ${job.prompt}`;
+}
+
+// A message `runMessage` wrote, read back (the chat shows it as a card);
+// undefined for anything else.
+export function parseRunMessage(text: string): { kind: "check_back"; note: string } | { kind: "job"; title: string; prompt: string } | undefined {
+  if (text.startsWith("[Check-back] ")) return { kind: "check_back", note: text.slice("[Check-back] ".length) };
+  const job = /^\[Scheduled job: ([^\n]*)\]\n\n([\s\S]*)$/.exec(text);
+  return job ? { kind: "job", title: job[1], prompt: job[2] } : undefined;
+}

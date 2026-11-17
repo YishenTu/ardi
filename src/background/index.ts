@@ -79,7 +79,7 @@ async function answer(req: PanelQuestion) {
     case "mention_tabs":
       return { tabs: await mentionableTabs() } satisfies PanelAnswers["mention_tabs"];
     case "list_jobs":
-      return { jobs: await schedules.listJobs() } satisfies PanelAnswers["list_jobs"];
+      return { jobs: await schedules.scheduledJobs() } satisfies PanelAnswers["list_jobs"];
     case "save_job":
       return { job: await schedules.saveJob(req.job) } satisfies PanelAnswers["save_job"];
     case "delete_job":

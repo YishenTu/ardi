@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { describeWhen, nextRun } from "../../src/schedule";
+import { describeWhen, nextRun, parseRunMessage, runMessage } from "../../src/schedule";
 
 // Local time, as the user sets it.
 const at = (month: number, day: number, hour = 0, minute = 0) => new Date(2026, month - 1, day, hour, minute).getTime();
@@ -47,5 +47,15 @@ describe("described in words", () => {
     expect(describeWhen({ kind: "hourly", every: 1, from: 0 })).toBe("Every hour");
     expect(describeWhen({ kind: "hourly", every: 6, from: 0 })).toBe("Every 6 hours");
     expect(describeWhen({ kind: "once", at: at(12, 1, 10) })).toMatch(/^Once · .*10:00$/);
+  });
+});
+
+describe("a run's message", () => {
+  const job = { id: "j", title: "Invoice check", prompt: "find new invoices\n\nand totals", when: { kind: "daily" as const, time: "09:00" }, paused: false };
+
+  test("reads back as the run it came from; anything else is the user's own", () => {
+    expect(parseRunMessage(runMessage(job))).toEqual({ kind: "job", title: "Invoice check", prompt: "find new invoices\n\nand totals" });
+    expect(parseRunMessage(runMessage({ ...job, prompt: "is it done?", chatId: 1 }))).toEqual({ kind: "check_back", note: "is it done?" });
+    expect(parseRunMessage("what's [Check-back] for?")).toBeUndefined();
   });
 });

@@ -580,3 +580,7 @@ textarea.job-input { resize: vertical; line-height: 1.5; }
 /* A chat a scheduled run used while it was off screen. */
 .chat-unread { flex: none; align-self: center; width: 7px; height: 7px; margin-left: 6px; border-radius: 50%; background: #3b82f6; }
 .chat-list li:hover .chat-unread { visibility: hidden; }
+/* A message a check-back or job sent: a card on the left, not the user's bubble. */
+.entry.scheduled-run { align-self: stretch; align-items: stretch; max-width: none; }
+.scheduled .glyph { display: grid; place-items: center; width: 12px; height: 12px; border: 0; border-radius: 0; color: var(--faint); }
+.scheduled .glyph svg { width: 12px; height: 12px; }

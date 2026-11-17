@@ -69,7 +69,7 @@ export type PanelQuestion =
   | { kind: "set_pi_path"; piPath: string }
   // The tabs the @ menu may list; null for any web page tab.
   | { kind: "mention_tabs" }
-  // Scheduled jobs: list, create or change (pause too), delete.
+  // Scheduled jobs (not check-backs): list, create or change (pause too), delete.
   | { kind: "list_jobs" }
   | { kind: "save_job"; job: JobDraft }
   | { kind: "delete_job"; id: string };

@@ -4,7 +4,7 @@ import { plainMentions } from "../mention";
 import { restoreOf } from "../restore";
 import { joinParts, postInParts } from "../parts";
 import type { PanelUpdate, PiStatus, SessionMeta } from "../panel-protocol";
-import type { Job } from "../schedule";
+import { runMessage, type Job } from "../schedule";
 import * as schedules from "./schedules";
 import { loadSettings } from "./settings";
 import * as store from "./store";
@@ -477,7 +477,7 @@ export const runJob = inOrder(async (job: Job) => {
     if (job.model) post(c, { type: "set_model", provider: job.model.provider, modelId: job.model.id });
     if (job.thinkingLevel) post(c, { type: "set_thinking_level", level: job.thinkingLevel });
   }
-  await send(c, job.prompt);
+  await send(c, runMessage(job));
   await broadcastSessions();
 });
 
@@ -520,7 +520,6 @@ export function queueAction({ action, index, text }: QueueAction) {
 }
 
 export function abort() {
-  if (chat && !isDraft(chat.meta)) void schedules.dropCheckBacks(chat.meta.id);
   if (chat) live(chat)?.browser?.cancel();
   post(chat, { type: "abort" });
 }

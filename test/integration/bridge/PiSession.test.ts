@@ -350,7 +350,7 @@ describe("what the chat shows", () => {
     expect(users()).toEqual([]);
   });
 
-  test("pi's schedule tool asks the extension through the bridge and gets its answer", async () => {
+  test("pi's scheduling tools ask the extension through the bridge and gets its answer", async () => {
     void startSession().prompt('schedule:{"op":"list"}');
     const request = await waitFor(() => {
       const found = events.find((e) => e.type === "schedule_request");

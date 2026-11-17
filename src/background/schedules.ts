@@ -25,6 +25,11 @@ export async function listJobs(): Promise<Job[]> {
   return jobs as Job[];
 }
 
+// Jobs only, without check-backs: what the Scheduled view and schedule_job list.
+export async function scheduledJobs(): Promise<Job[]> {
+  return (await listJobs()).filter((j) => j.chatId === undefined);
+}
+
 async function setJobs(jobs: Job[]): Promise<void> {
   await chrome.storage.local.set({ [KEY]: jobs });
 }
@@ -71,7 +76,7 @@ export function deleteJob(id: string): Promise<boolean> {
   });
 }
 
-// Stop and deleting a chat drop the check-backs waiting on it.
+// Deleting a chat drops the check-back waiting on it.
 export function dropCheckBacks(chatId: number): Promise<void> {
   return inOrder(async () => {
     const jobs = await listJobs();
@@ -118,39 +123,47 @@ export function rearm(): Promise<void> {
   });
 }
 
-// Answers pi's `schedule` tool, called from `chatId`'s pi, on `model`.
+// Answers pi's check_back and schedule_job tools, asked from `chatId`'s pi,
+// on `model`.
 export async function answerTool(request: ScheduleRequest, from: { chatId: number; model: ModelState }): Promise<unknown> {
+  const model = { model: from.model.current, thinkingLevel: from.model.thinkingLevel };
   switch (request.op) {
+    case "check_back": {
+      if (!request.note) throw new Error("A check-back needs a note");
+      if (!(request.at > Date.now())) throw new Error("That time has already passed");
+      // One per chat: a new one replaces it.
+      await dropCheckBacks(from.chatId);
+      const job = await saveJob({ title: request.note.slice(0, 60), prompt: request.note, when: { kind: "once", at: request.at }, chatId: from.chatId, ...model });
+      return { at: new Date(job.next!).toString() };
+    }
+    case "cancel_check_back":
+      await dropCheckBacks(from.chatId);
+      return { cancelled: true };
     case "create": {
       const { title, prompt, when } = request.job;
       if (!title || !prompt || !when) throw new Error("A job needs a title, a prompt and when to run");
-      const job = await saveJob({
-        title, prompt, when, model: from.model.current, thinkingLevel: from.model.thinkingLevel,
-        ...(when.kind === "once" && { chatId: from.chatId }),
-      });
-      if (job.next === undefined) {
-        await deleteJob(job.id);
-        throw new Error("That time has already passed");
-      }
-      return summary(job, from.chatId);
+      if (nextRun(when, Date.now()) === undefined) throw new Error("That time has already passed");
+      return summary(await saveJob({ title, prompt, when, ...model }));
     }
     case "list":
-      return (await listJobs()).map((j) => summary(j, from.chatId));
-    case "cancel":
-      if (!(await deleteJob(request.id))) throw new Error(`No scheduled job with id ${request.id}`);
-      return { cancelled: request.id };
+      return (await scheduledJobs()).map(summary);
+    case "cancel": {
+      const job = (await scheduledJobs()).find((j) => j.id === request.id);
+      if (!job) throw new Error(`No scheduled job with id ${request.id}`);
+      await deleteJob(job.id);
+      return { cancelled: job.id };
+    }
     default:
       throw new Error("Unknown schedule operation");
   }
 }
 
-function summary(job: Job, chatId: number) {
+function summary(job: Job) {
   return {
     id: job.id,
     title: job.title,
     when: describeWhen(job.when),
     next: job.next === undefined ? null : new Date(job.next).toString(),
     paused: job.paused,
-    runsIn: job.chatId === undefined ? "a new chat" : job.chatId === chatId ? "this chat" : "another chat",
   };
 }

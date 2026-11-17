@@ -145,7 +145,7 @@ export class PiSession {
     this.input.connect(transport);
   }
 
-  // A `schedule` tool request (see SCHEDULE_DIALOG) goes to the extension.
+  // A check_back or schedule_job request (see SCHEDULE_DIALOG) goes to the extension.
   private forwardSchedule(event: Record<string, unknown>): boolean {
     if (event.type !== "extension_ui_request" || event.method !== "editor" || event.title !== SCHEDULE_DIALOG) return false;
     const id = String(event.id);

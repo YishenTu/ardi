@@ -15,7 +15,7 @@ export type BrowserRelayEvent =
   | { type: "browser_request"; id: string; request: unknown }
   | { type: "browser_cancel"; id: string };
 
-// pi's `schedule` tool asks the extension through pi's own extension UI
+// pi's check_back and schedule_job tools ask the extension through pi's own extension UI
 // protocol: an `editor` dialog with this title, the request as JSON in its
 // prefill. The bridge never shows it; it forwards it as `schedule_request`
 // and returns the extension's `schedule_reply`, as JSON, as the dialog's value.
