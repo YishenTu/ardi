@@ -36,8 +36,15 @@ export const locateImage = (n: number) => `(() => {
 
 export const text = (value: string, details?: unknown) => ({ content: [{ type: "text" as const, text: value }], details });
 
+// Keeps the start and the end: a command's last lines often say where its
+// whole output went or how it ended.
+const TAIL_CHARS = 1_000;
+
 export function truncate(value: string, max = MAX_CHARS): string {
-  return value.length <= max ? value : `${value.slice(0, max)}\n\n[Output truncated: ${value.length} chars, showing the first ${max}.]`;
+  if (value.length <= max) return value;
+  const tail = Math.min(TAIL_CHARS, Math.floor(max / 2));
+  const head = max - tail;
+  return `${value.slice(0, head)}\n\n[Output truncated: ${value.length} chars, showing the first ${head} and the last ${tail}.]\n\n${value.slice(value.length - tail)}`;
 }
 
 // Fetches an image the way its page would, with the page as the referer

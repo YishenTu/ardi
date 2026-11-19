@@ -27,6 +27,8 @@ To organize tabs (open, move, nest, pin, rename, set icons and colours, mute, sl
 ```sh
 ardia tabs --json        # windows › spaces (one per profile) › topApps, pinned, tabs; groups nest with items
 ardia tabs --flat --json # one object per tab: id, url, title, pin, group, window, profile, active, asleep
+ardia tabs --usage       # each tab's process: pid, CPU % of a core, memory, hottest first (--json: pid, cpu, memory)
+ardia tabs --pid 61234   # the tabs in that process, to name a pid from top or Activity Monitor
 ardia groups --json      # every group: id, name, icon, color, collapsed, pinned, parent, depth, tabs
 ```
 
@@ -83,7 +85,20 @@ ardia config check
 
 `init` creates the folder, `config.json` and the schemas when there are none. `list` shows every setting with its allowed values, default and file value. Shortcuts are one per command (`''` unbinds). `unset` leaves Ardia's current value in place. Run `check` after a change. To land on a new tab at launch while keeping the session: `ardia config set launchActions '["newTab"]'`.
 
-Themes are colour overrides in `~/.config/ardia/themes/NAME.json`. `ardia theme new NAME` writes every dark and light role with Ardia's values: change only the roles the user asked about. `ardia theme use NAME` (or `none`) picks one, and `ardia theme check` checks it.
+To change how Ardia looks (colours, fonts, text sizes, row heights, corners, which sidebar parts show, icons), use `ardia theme set`, one key at a time. It edits the active theme and a running Ardia restyles at once, no restart; with no active theme it creates `themes/custom.json` and makes it active.
+
+```sh
+ardia theme set dark.accent '#FF9F5A'
+ardia theme set type.family "Avenir Next"
+ardia theme set metrics.rowHeight 40
+ardia theme set metrics.radius.row 14
+ardia theme set layout.hide '["navButtons"]'
+ardia theme set icons.plus plus.circle
+ardia theme get metrics.rowHeight
+ardia theme unset metrics.rowHeight
+```
+
+Themes live in `~/.config/ardia/themes/NAME.json`: `dark` and `light` colour roles, plus `type` (font `family`, `mono`, `scale`, `sizes`, `weights`), `metrics` (`rowHeight`, `rowGap`, `pinnedHeight`, `sidebarWidth`, `radius`), `layout` (`hide` sidebar parts, `addressField` and `newTab` top or bottom) and `icons` (SF Symbol swaps). KEY is the dotted path (`type.sizes.body`, `metrics.radius.row`); under `icons` the rest is one symbol name (`icons.chevron.down`). Every key is optional; a block left out is Ardia's own look. `set` checks the value first and refuses a bad one with the allowed range; `get` prints a key's value, or fails for a key the theme doesn't set, naming Ardia's default when there is one; `unset` gives the key back to Ardia. `--theme NAME` works on another theme. `ardia theme new NAME` writes every role and look key with Ardia's values; the ranges and defaults are in `theme.schema.json`. `ardia theme use NAME` (or `none`) picks one, and `ardia theme check` checks it; a bad key is skipped on its own and the rest applies.
 
 Ask before replacing a value or theme the user set themselves. Settings that grant control or send data somewhere (`cliControl`, custom search URLs, page engines) can't go in the file: tell the user where they are in Settings.
 
