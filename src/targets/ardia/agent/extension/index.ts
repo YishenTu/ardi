@@ -50,7 +50,8 @@ function ardia(args: string[], opts: { session?: string; input?: string; signal?
   });
 }
 
-const failure = (run: Run, fallback: string) => new ArdiaError(`${run.stdout}\n${run.stderr}`.trim() || fallback);
+// A failed save prints the whole result before its error: cap it like output.
+const failure = (run: Run, fallback: string) => new ArdiaError(truncate(`${run.stdout}\n${run.stderr}`.trim()) || fallback);
 
 type Step = { success: boolean; result: unknown; error: string | null };
 
@@ -225,10 +226,12 @@ export default function (pi: ExtensionAPI) {
       script: Type.Optional(Type.Boolean({ description: "Run code as an ardia browse script (JavaScript) instead of commands" })),
       // The CLI refuses a script timeout past 10 minutes.
       timeout: Type.Optional(Type.Number({ description: `Seconds a script may run (default ${SCRIPT_TIMEOUT_S}, at most 600)`, minimum: 1, maximum: 600 })),
+      out: Type.Optional(Type.String({ description: "With script: file to save its whole return value in (JSON, or a string as is), relative to the working directory; the answer is a short digest. Build deliverables from this file. For commands, put --out <file> on a read, eval, snapshot or get line instead." })),
     }),
     annotations: { destructiveHint: true, openWorldHint: true },
     async execute(_id, params, signal, _onUpdate, ctx) {
       const args = params.script ? ["browse", "script", "--timeout", `${params.timeout ?? SCRIPT_TIMEOUT_S}s`] : ["browse", "batch", "--bail"];
+      if (params.script && params.out) args.push(`--out=${params.out}`);
       const run = await ardia(args, { session: chatSession(ctx), input: params.code, signal });
       if (run.code !== 0) throw failure(run, run.code === 2 ? UNREACHABLE : "The command failed.");
       // stderr carries notices such as which tab a session took.

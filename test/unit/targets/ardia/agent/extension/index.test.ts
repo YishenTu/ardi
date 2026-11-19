@@ -63,6 +63,15 @@ if (argv[0] === "windows") {
     const other = Object.entries(used()).find(([s, t]) => s !== session && t === id);
     console.log(other ? "✗ Tab [" + id + "] is in use by session " + other[0] + ", so it stays open" : "✓ Closed " + id);
     process.exit(other ? 1 : 0);
+  } else if (lines[0]?.startsWith("read --pages ")) {
+    // A multi-page read: up to 36,000 characters the CLI didn't cap, or past
+    // that a capped one whose last line names the file with all of it.
+    const n = Number(lines[0].split(" ")[2]);
+    console.log("=== Page\n" + "x".repeat(n) + (n > 36000 ? "\n[output capped at 36,000 of " + n + " characters; all of it is in /tmp/ardia-browse-output-501/output-k2x9.txt]" : "\n=== end"));
+  } else if (lines[0] === "eval huge-failure") {
+    // A failed save prints the whole result before its error, and exits 1.
+    console.log("y".repeat(200000) + "\n✗ Couldn't write /nope/rows.json: permission denied");
+    process.exitCode = 1;
   } else if (lines.some((l) => l.startsWith("click @e404"))) {
     console.log("✗ click @e404: Element not found");
     process.exit(1);
@@ -166,6 +175,24 @@ ardiaTest("a CLI that exits before reading a long script doesn't crash Pi", asyn
     process.off("uncaughtException", crashed);
   }
   expect(crashes).toEqual([]);
+});
+
+// The CLI caps its own output and ends a capped one with the file holding
+// all of it; the agent must see the whole of what the CLI printed, or at
+// least that last line.
+ardiaTest("a capped output keeps the line naming the file with all of it", async () => {
+  expect(textOf(await tools.ardia_exec.execute("1", { code: "read --pages 60000" }))).toContain("all of it is in /tmp/ardia-browse-output-501/output-k2x9.txt");
+});
+
+ardiaTest("a failed command's long output reaches the agent capped, with its error", async () => {
+  const failed = await tools.ardia_exec.execute("1", { code: "eval huge-failure" }).then(() => "", (error: Error) => error.message);
+  expect(failed.length).toBeLessThan(25000);
+  expect(failed).toContain("Couldn't write /nope/rows.json: permission denied");
+});
+
+ardiaTest("ardia_exec saves a script's result to the file the agent names", async () => {
+  await tools.ardia_exec.execute("1", { code: "return 1", script: true, out: "rows.json" });
+  expect(calls().at(-1)!.argv).toContain("--out=rows.json");
 });
 
 ardiaTest("ardia_exec runs its commands in the browser and reports a failed one as an error", async () => {
