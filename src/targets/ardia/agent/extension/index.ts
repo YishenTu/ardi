@@ -35,10 +35,8 @@ type Run = { code: number; stdout: string; stderr: string };
 function ardia(args: string[], opts: { session?: string; input?: string; signal?: AbortSignal } = {}): Promise<Run> {
   return new Promise((resolve, reject) => {
     // ARDIA_STAR_PROMPT=0: the CLI otherwise asks its caller, here Pi, to
-    // have the user star Ardia's repo. AGENT_BROWSER_JSON goes: the tools
-    // ask for JSON with --json where they parse it, and read text elsewhere.
-    const { AGENT_BROWSER_JSON: _json, ...inherited } = process.env;
-    const env = { ...inherited, ARDIA_STAR_PROMPT: "0", ...(opts.session ? { AGENT_BROWSER_SESSION: opts.session } : {}) };
+    // have the user star Ardia's repo.
+    const env = { ...process.env, ARDIA_STAR_PROMPT: "0", ...(opts.session ? { AGENT_BROWSER_SESSION: opts.session } : {}) };
     const child = execFile("ardia", args, { env, signal: opts.signal, maxBuffer: 64 * 1024 * 1024 }, (error, stdout, stderr) => {
       const code = (error as { code?: unknown } | null)?.code;
       if (error && typeof code !== "number") return reject(code === "ENOENT" ? new ArdiaError("The ardia command isn't installed. Ask the user to install it from Ardia's Settings › Advanced › Command Line.") : error);
@@ -228,19 +226,14 @@ export default function (pi: ExtensionAPI) {
       script: Type.Optional(Type.Boolean({ description: "Run code as an ardia browse script (JavaScript) instead of commands" })),
       // The CLI refuses a script timeout past 10 minutes.
       timeout: Type.Optional(Type.Number({ description: `Seconds a script may run (default ${SCRIPT_TIMEOUT_S}, at most 600)`, minimum: 1, maximum: 600 })),
-      out: Type.Optional(Type.String({ description: "File to save the whole result in (a script's return value as JSON, or everything the commands print), relative to the working directory; the answer is a short digest. Build deliverables from this file." })),
+      out: Type.Optional(Type.String({ description: "With script: file to save its whole return value in (JSON, or a string as is), relative to the working directory; the answer is a short digest. Build deliverables from this file. For commands, put --out <file> on a read, eval, snapshot or get line instead." })),
     }),
     annotations: { destructiveHint: true, openWorldHint: true },
     async execute(_id, params, signal, _onUpdate, ctx) {
       const args = params.script ? ["browse", "script", "--timeout", `${params.timeout ?? SCRIPT_TIMEOUT_S}s`] : ["browse", "batch", "--bail"];
-      // One argument: batch reads its lines from stdin only when every
-      // argument is a flag.
-      if (params.out) args.push(`--out=${params.out}`);
+      if (params.script && params.out) args.push(`--out=${params.out}`);
       const run = await ardia(args, { session: chatSession(ctx), input: params.code, signal });
       if (run.code !== 0) throw failure(run, run.code === 2 ? UNREACHABLE : "The command failed.");
-      // A batch whose commands ran but whose file wasn't written exits 0 and
-      // says so first; a saved one starts with "✓ Saved".
-      if (params.out && run.stdout.startsWith("✗ ")) throw failure(run, "The output wasn't saved.");
       // stderr carries notices such as which tab a session took.
       return text(truncate([run.stdout, run.stderr].map((s) => s.trim()).filter(Boolean).join("\n\n") || "(no output)"));
     },

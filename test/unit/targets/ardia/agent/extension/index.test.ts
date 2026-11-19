@@ -42,12 +42,7 @@ function answer(line) {
 if (argv[0] === "windows") {
   console.log(JSON.stringify([{ focused: false, tabs: [{ id: "tab-a", active: true }] }, { focused: true, tabs: [{ id: "tab-a", active: false }, { id: "tab-b", active: true }] }]));
 } else if (argv[0] === "browse" && argv[1] === "batch") {
-  // Like the real CLI, any argument that isn't a flag or a flag's value is a
-  // command line, and then stdin isn't read.
-  const VALUED = ["--screenshot-format", "--screenshot-quality"];
-  const inline = argv.slice(2).some((a, i, all) => !a.startsWith("--") && !VALUED.includes(all[i - 1]));
-  const lines = inline ? [] : fs.readFileSync(0, "utf8").split("\n").filter(Boolean);
-  const out = argv.find((a) => a.startsWith("--out="))?.slice(6);
+  const lines = fs.readFileSync(0, "utf8").split("\n").filter(Boolean);
   if (process.env.FAKE_ARDIA_BUSY) {
     // Errors outside any one command (daemon start, a busy session) aren't per line.
     console.log(JSON.stringify({ success: false, data: null, error: "session_busy: another command is running" }));
@@ -77,12 +72,6 @@ if (argv[0] === "windows") {
     // A failed save prints the whole result before its error, and exits 1.
     console.log("y".repeat(200000) + "\n✗ Couldn't write /nope/rows.json: permission denied");
     process.exitCode = 1;
-  } else if (process.env.AGENT_BROWSER_JSON === "1") {
-    // JSON mode answers success and leaves out a failed save.
-    console.log(JSON.stringify({ success: true, data: null, error: null }));
-  } else if (out?.startsWith("/nope/")) {
-    // A batch whose commands ran but whose file couldn't be written still exits 0.
-    console.log("✗ Couldn't write " + out + ": Permission denied\n" + lines.map((l) => "✓ " + l).join("\n"));
   } else if (lines.some((l) => l.startsWith("click @e404"))) {
     console.log("✗ click @e404: Element not found");
     process.exit(1);
@@ -124,7 +113,6 @@ const starPrompt = process.env.ARDIA_STAR_PROMPT;
 afterEach(() => {
   process.env.PATH = path;
   delete process.env.FAKE_ARDIA_BUSY;
-  delete process.env.AGENT_BROWSER_JSON;
   if (starPrompt === undefined) delete process.env.ARDIA_STAR_PROMPT;
   else process.env.ARDIA_STAR_PROMPT = starPrompt;
 });
@@ -202,22 +190,9 @@ ardiaTest("a failed command's long output reaches the agent capped, with its err
   expect(failed).toContain("Couldn't write /nope/rows.json: permission denied");
 });
 
-ardiaTest("a batch whose file couldn't be written reaches the agent as an error", async () => {
-  await expect(tools.ardia_exec.execute("1", { code: "snapshot -i", out: "/nope/page.txt" })).rejects.toThrow("Couldn't write /nope/page.txt");
-});
-
-// ardia_exec reads the CLI's text answers; a user's JSON default must not change them.
-ardiaTest("ardia_exec answers in text even when the user's environment asks the CLI for JSON", async () => {
-  process.env.AGENT_BROWSER_JSON = "1";
-  await expect(tools.ardia_exec.execute("1", { code: "snapshot -i", out: "/nope/page.txt" })).rejects.toThrow("Couldn't write /nope/page.txt");
-});
-
-ardiaTest("ardia_exec saves to the file the agent names, and still runs every command", async () => {
-  expect(textOf(await tools.ardia_exec.execute("1", { code: "snapshot -i\nclick @e3", out: "page.txt" }))).toBe("✓ snapshot -i\n✓ click @e3");
-  await tools.ardia_exec.execute("2", { code: "return 1", script: true, out: "rows.json" });
-  const [batch, script] = calls().slice(-2).map((c) => c.argv);
-  expect(batch).toContain("--out=page.txt");
-  expect(script).toContain("--out=rows.json");
+ardiaTest("ardia_exec saves a script's result to the file the agent names", async () => {
+  await tools.ardia_exec.execute("1", { code: "return 1", script: true, out: "rows.json" });
+  expect(calls().at(-1)!.argv).toContain("--out=rows.json");
 });
 
 ardiaTest("ardia_exec runs its commands in the browser and reports a failed one as an error", async () => {

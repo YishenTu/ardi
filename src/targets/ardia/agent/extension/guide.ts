@@ -41,7 +41,7 @@ When the same steps repeat per item (every message, every card, a list to its en
     rows.push({ name: await page.text('h1'), price: await page.text('.price') });
   }
   return rows;
-- Save data you'll build on with ardia_exec's out parameter (\`--out <file>\` on a \`read\` or \`eval\` line), beside your deliverables, and build files from it, never by retyping output. It prints a digest starting \`✓ Saved\`; a line that starts \`✗\` saved nothing. A batch goes on past a failed save, so end the call at a save a later step depends on. Show more with \`head\` in bash: a value that never appeared in output is unverified.
+- Save data you'll build on to a file (a script: ardia_exec's out; a command: \`--out <file>\` on a \`read\` or \`eval\` line), beside your deliverables, and build files from it, never by retyping output. It prints a digest starting \`✓ Saved\`; a line that starts \`✗\` saved nothing. A batch goes on past a failed save, so end the call at a save a later step depends on. Show more with \`head\` in bash: a value that never appeared in output is unverified.
 - \`state\` is one object per browse session (this chat's, until \`close\` ends it) that every script starts with and keeps after it ends, even past a timeout. In a long loop, push rows to it as you go and continue where it stopped in the next script:
   state.rows ??= []; state.next ??= 1;
   for (; state.next <= 119; state.next++) {
