@@ -126,6 +126,23 @@ A hook reacts to the browser (a tab opening, a page loading, media starting, a t
 
 Try an event hook with `ardia on`, which runs until interrupted (give the bash call a `timeout`): `ardia on tab.navigated --match 'https://*.youtube.com/*' -- ~/.ardi/hooks/yt-hook`. `ardia hooks list` checks the file and shows whether hooks run at login. `ardia hooks install` makes them run at every login and keeps running after this chat: ask the user first. Their output goes to `~/Library/Logs/Ardia/hooks.log`.
 
+## Anything else: `ardia methods` and `ardia call`
+
+Ardia's control socket reaches the whole browser and every data point in the profile, not only what the commands above wrap. When none of them fits, look up the method before guessing a name:
+
+```sh
+ardia methods                                      # name, reads or changes, description
+ardia methods <name>                               # its description, params schema and result
+ardia methods --json                               # the whole catalog
+ardia call <name> -p key=value -p limit:=20 --json # -p k=v is a string, k:=json any JSON value
+ardia call <name> --params '{"ids": ["tab-1"]}'    # or --params - to read the JSON from stdin
+```
+
+- `ardia call` prints Ardia's result (JSON with `--json`) and exits 1 with Ardia's message when it refuses. Exit 2 means bad params (nothing sent: clean JSON only, `{}` for none), Ardia can't be reached, or the outcome is unknown ("may or may not have run": check before retrying one that `changes`).
+- Ask before calling a method marked `changes` that the user didn't ask for, as for any unasked step.
+- "this Ardia is too old to list its methods": ask the user to update Ardia; the commands above still work.
+- For a page or tab, ardia_exec's `cdp <Domain.method>` sends any DevTools method instead.
+
 ## Userscripts
 
 When the user wants a site to look or behave differently every time they visit it, write a userscript instead of driving the page by hand. `ardia scripts` takes TypeScript or JavaScript with a Violentmonkey `==UserScript==` header, so existing `.user.js` files work too.
