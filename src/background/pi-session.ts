@@ -291,8 +291,8 @@ async function onBridgeEvent(c: Chat, conn: Live, event: Exclude<BridgeEvent, { 
       settle(c);
       break;
     case "history":
-      // Only until pi's own `ready`.
-      if (c.history) break;
+      // Only until this pi's own `ready`; it replaces what an earlier pi read.
+      if (conn.state === "connected") break;
       c.history = event.history;
       toScreen(c, replay());
       break;

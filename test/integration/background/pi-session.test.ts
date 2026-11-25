@@ -250,6 +250,17 @@ describe("background pi session", () => {
     expect(last("replay")).toMatchObject({ status: "connecting", history: HISTORY });
   });
 
+  test("after a restart, the new bridge's history shows before pi is up, and none after", async () => {
+    await storedChat();
+    await pi.restart();
+    const since: ChatMessage[] = [...HISTORY, { role: "user", id: "u2", content: "since", timestamp: 2 }];
+    fromBridge({ type: "history", sessionFile: SESSION_FILE, history: since });
+    expect(last("replay")).toMatchObject({ status: "connecting", history: since });
+    ready(SESSION_FILE, since);
+    fromBridge({ type: "history", sessionFile: SESSION_FILE, history: HISTORY });
+    expect(last("replay")).toMatchObject({ status: "connected", history: since });
+  });
+
   test("deleting the current chat stops its pi, even mid-run, and moves to the next one or a new draft", async () => {
     const chat = await storedChat();
     chunk({ type: "run_start", at: 1 });
