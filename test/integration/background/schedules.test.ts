@@ -132,6 +132,22 @@ describe("scheduled jobs", () => {
     expect(chromeFake.nativePorts).toHaveLength(0);
   });
 
+  test("a paused one-time job outlives its time, through a queued alarm and a browser restart, and still can't resume", async () => {
+    const job = await schedules.saveJob({ title: "Renew", prompt: "renew", when: { kind: "once", at: Date.now() + 60_000 } });
+    const queued = chromeFake.alarms.get(`job:${job.id}`)!;
+    await schedules.saveJob({ ...job, paused: true });
+    expect(await schedules.due(queued)).toBeUndefined();
+    const later = spyOn(Date, "now").mockReturnValue(job.next + 1);
+    try {
+      await schedules.rearm();
+      expect(await schedules.scheduledJobs()).toMatchObject([{ id: job.id, paused: true }]);
+      expect(armed()).toEqual([]);
+      await expect(schedules.saveJob({ ...job, paused: false })).rejects.toThrow(/passed/);
+    } finally {
+      later.mockRestore();
+    }
+  });
+
   test("jobs saved in the earlier pre-release layout are left alone, never run", async () => {
     chromeFake.storage.set("jobs", [{ id: "old", title: "Old", prompt: "x", when: { kind: "daily", time: "09:00" }, paused: false, next: 1 }]);
     expect(await schedules.scheduledJobs()).toEqual([]);

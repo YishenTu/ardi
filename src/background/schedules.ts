@@ -105,7 +105,7 @@ export function dropCheckBack(chatId: number): Promise<void> {
 // An alarm fired: moves its job on to its next run (a one-time job or a
 // check-back is done), and returns what should run now. A run missed while
 // the browser was closed is skipped, and so is an alarm for a time it has
-// since moved from (changed, paused or already run).
+// since moved from (changed or already run) or for a paused job.
 export function due(alarm: chrome.alarms.Alarm): Promise<Scheduled | undefined> {
   if (!alarm.name.startsWith(ALARM)) return Promise.resolve(undefined);
   const id = alarm.name.slice(ALARM.length);
@@ -113,6 +113,10 @@ export function due(alarm: chrome.alarms.Alarm): Promise<Scheduled | undefined> 
     const all = await listScheduled();
     const fired = all.find((s) => s.id === id);
     if (!fired || fired.next !== alarm.scheduledTime) return undefined;
+    // Pausing cleared its alarm; this one was already on its way. A paused
+    // job stays as it is, even past its one time, until the user resumes or
+    // deletes it.
+    if (fired.kind === "job" && fired.paused) return undefined;
     const missed = alarm.scheduledTime < (await noteBrowserStart());
     const next = fired.kind === "job" && fired.when.kind !== "once" ? nextRun(fired.when, Math.max(Date.now(), alarm.scheduledTime)) : undefined;
     if (next === undefined) {
@@ -122,17 +126,19 @@ export function due(alarm: chrome.alarms.Alarm): Promise<Scheduled | undefined> 
       await store(all.map((s) => (s === fired ? moved : s)));
       await arm(moved);
     }
-    return missed || (fired.kind === "job" && fired.paused) ? undefined : fired;
+    return missed ? undefined : fired;
   });
 }
 
 // On browser start: alarms may not survive a restart, so each is armed
 // again, for its next run from now (runs missed meanwhile are skipped).
+// Paused jobs stay as they are.
 export function rearm(): Promise<void> {
   return inOrder(async () => {
     const now = Date.now();
     const all = (await listScheduled()).flatMap((s): Scheduled[] => {
-      if (s.next > now) return [s];
+      // A paused job has no alarm, and time passing doesn't drop it.
+      if (s.next > now || (s.kind === "job" && s.paused)) return [s];
       const next = s.kind === "job" ? nextRun(s.when, now) : undefined;
       return next === undefined ? [] : [{ ...s, next }];
     });
