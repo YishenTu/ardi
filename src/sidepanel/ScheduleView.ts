@@ -23,6 +23,9 @@ const dateValue = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pa
 const timeValue = (d: Date) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 const modelKey = (m?: { provider: string; id: string }) => (m ? `${m.provider}/${m.id}` : "");
 
+// What the screen shows: the job list, or the form for a job (none: a new one).
+type Mode = { view: "list" } | { view: "form"; job?: Job };
+
 // The Scheduled screen, over the chat: the list of jobs, and the form that
 // creates or edits one. The background owns the jobs; this shows them and
 // asks for changes. `models` is what pi last reported, for the model picker.
@@ -45,8 +48,7 @@ export class ScheduleView {
   private readonly effort: HTMLElement;
   private readonly error: HTMLElement;
   private jobs: Job[] = [];
-  // The job the form edits; undefined for a new one.
-  private editing: Job | undefined;
+  private mode: Mode = { view: "list" };
   private kind: When["kind"] = "daily";
   private level: ThinkingLevel | undefined;
 
@@ -83,7 +85,7 @@ export class ScheduleView {
       void this.save();
     });
     $("schedule-back").addEventListener("click", () => {
-      if (this.form.hidden) this.close();
+      if (this.mode.view === "list") this.close();
       else void this.showList();
     });
     root.addEventListener("keydown", (e) => {
@@ -113,12 +115,25 @@ export class ScheduleView {
     this.root.hidden = true;
   }
 
+  // The job the form edits; undefined for a new one, or on the list.
+  private get editing(): Job | undefined {
+    return this.mode.view === "form" ? this.mode.job : undefined;
+  }
+
+  // Shows the list or the form, with the header buttons that go with it.
+  private show(mode: Mode) {
+    this.mode = mode;
+    const form = mode.view === "form";
+    const job = form ? mode.job : undefined;
+    this.listView.hidden = form;
+    this.form.hidden = !form;
+    this.heading.textContent = !form ? "Scheduled" : job ? "Job" : "New job";
+    this.newButton.hidden = form;
+    this.pauseButton.hidden = this.deleteButton.hidden = !job;
+  }
+
   private async showList() {
-    this.form.hidden = true;
-    this.listView.hidden = false;
-    this.heading.textContent = "Scheduled";
-    this.newButton.hidden = false;
-    this.pauseButton.hidden = this.deleteButton.hidden = true;
+    this.show({ view: "list" });
     this.jobs = (await askBackground({ kind: "list_jobs" })).jobs;
     this.renderList();
   }
@@ -167,13 +182,8 @@ export class ScheduleView {
   // Fills the form with `job`, or a new job's defaults: daily at 9, on the
   // model and effort the current chat is on.
   private edit(job: Job | undefined) {
-    this.editing = job;
+    this.show({ view: "form", job });
     this.error.textContent = "";
-    this.listView.hidden = true;
-    this.form.hidden = false;
-    this.heading.textContent = job ? "Job" : "New job";
-    this.newButton.hidden = true;
-    this.pauseButton.hidden = this.deleteButton.hidden = !job;
     if (job) {
       this.pauseButton.title = job.paused ? "Resume" : "Pause";
       this.pauseButton.innerHTML = job.paused ? RESUME_ICON : PAUSE_ICON;
