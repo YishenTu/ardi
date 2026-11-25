@@ -49,7 +49,7 @@ const fromBridge = (event: BridgeEvent, to = bridge()) => to.receive(event);
 const chunk = (chunk: ChatChunk, to = bridge()) => fromBridge({ type: "chunk", chunk }, to);
 // The bridge reports pi working or input waiting, or nothing left to do,
 // with how many requests it had received (all of them, unless given).
-const received = (port: FakePort) => port.sent.filter((r: { type: string }) => r.type !== "browser_reply").length;
+const received = (port: FakePort) => port.sent.filter((r: { type: string }) => r.type !== "browser_reply" && r.type !== "schedule_reply").length;
 const busy = (value: boolean, to = bridge(), requests = received(to)) => fromBridge({ type: "busy", busy: value, requests }, to);
 const ready = (sessionFile?: string, history: ChatMessage[] = [], to = bridge()) =>
   fromBridge({ type: "ready", sessionFile, history, model: { models: [] }, commands: [] }, to);

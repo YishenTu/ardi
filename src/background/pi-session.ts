@@ -1,5 +1,5 @@
 import type { ChatChunk, ChatMessage, ImageAttachment, ModelState, PiCommand, QueueAction, QueuedMessage, ThinkingLevel } from "../chat";
-import type { BridgeEvent, BridgeRequest } from "../bridge/protocol";
+import type { BridgeEvent, BridgeRequest, BrowserReply, ScheduleReply } from "../bridge/protocol";
 import { plainMentions } from "../mention";
 import { restoreOf } from "../restore";
 import { joinParts, postInParts } from "../parts";
@@ -246,9 +246,11 @@ function dropHeld(id: number) {
     .catch(() => undefined);
 }
 
-// `c` is unset only before the worker has read which chat is open.
-function post(c: Chat | undefined, request: BridgeRequest) {
-  const conn = c && live(c);
+// Requests the bridge counts (`sent`): all but replies to pi's tools.
+type Counted = Exclude<BridgeRequest, BrowserReply | ScheduleReply>;
+
+// Every counted request goes through here.
+function post(conn: Live | undefined, request: Counted) {
   if (!conn) return;
   conn.sent++;
   postInParts(conn.port, request);
@@ -378,18 +380,23 @@ async function connect(c: Chat, starting: Connection) {
     settle(c);
   });
   setConnection(c, conn);
-  post(c, { type: "start", sessionFile: c.meta.piSessionFile, piPath: piPath || undefined });
+  post(conn, { type: "start", sessionFile: c.meta.piSessionFile, piPath: piPath || undefined });
 }
 
 // What the panel and settings ask for runs one request at a time, in the
-// order asked: a message still being stored must not land in a chat the user
-// switched to meanwhile, nor be passed by a new chat. Stop and restart don't
-// wait: a message being stored when pi restarts goes to the new pi.
+// order asked, once the worker knows which chat is open: a message still
+// being stored must not land in a chat the user switched to meanwhile, nor
+// be passed by a new chat. Stop and restart don't wait: a message being
+// stored when pi restarts goes to the new pi.
 let queue: Promise<unknown> = Promise.resolve();
 
 function inOrder<A extends unknown[]>(run: (...args: A) => unknown): (...args: A) => Promise<void> {
   return (...args) => {
-    const done = queue.then(() => run(...args)).then(() => undefined);
+    // `ready` on every call: one that failed fails each request, not just the first.
+    const done = queue.then(async () => {
+      await ready;
+      await run(...args);
+    });
     queue = done.catch((error: unknown) => console.error("request failed:", error));
     return done;
   };
@@ -420,8 +427,7 @@ async function switchTo(next: SessionMeta, { stopLeft = false } = {}) {
   chat = back ?? opened(next);
   void chrome.storage.local.set({ [CURRENT_CHAT]: next.id });
   broadcast(replay());
-  if (stopLeft) stop(left);
-  if (busy(left)) away.add(left);
+  if (!stopLeft && busy(left)) away.add(left);
   else stop(left);
   void handOver();
   if (chat.meta.unread) await seen(chat);
@@ -430,18 +436,15 @@ async function switchTo(next: SessionMeta, { stopLeft = false } = {}) {
 }
 
 export const newSession = inOrder(async () => {
-  await ready;
   if (!isDraft(chat.meta)) await switchTo(draft());
 });
 
 export const switchSession = inOrder(async (id: number) => {
-  await ready;
   const meta = await store.getSession(id);
   if (meta && meta.id !== chat.meta.id) await switchTo(meta);
 });
 
 export const deleteSession = inOrder(async (id: number) => {
-  await ready;
   await store.deleteSession(id);
   dropHeld(id);
   await schedules.dropCheckBack(id);
@@ -456,7 +459,6 @@ export const deleteSession = inOrder(async (id: number) => {
 });
 
 export const prompt = inOrder(async (text: string, images?: ImageAttachment[], steer?: boolean) => {
-  await ready;
   // The chat it was sent from, even if the user moves on meanwhile.
   await send(chat, text, images, steer);
 });
@@ -465,7 +467,6 @@ export const prompt = inOrder(async (text: string, images?: ImageAttachment[], s
 // after it, on the job's model and effort. A chat off screen runs
 // in the background like one the user left, and is marked unread.
 export const runJob = inOrder(async (run: Scheduled) => {
-  await ready;
   // Storage first: once the chat is picked, nothing may wait until the prompt
   // is sent, or its bridge could report idle and be stopped meanwhile.
   const now = Date.now();
@@ -493,8 +494,8 @@ export const runJob = inOrder(async (run: Scheduled) => {
   // pi couldn't start; the run is skipped.
   if (!conn) return;
   if (run.kind === "job") {
-    if (run.model) post(c, { type: "set_model", provider: run.model.provider, modelId: run.model.id });
-    if (run.thinkingLevel) post(c, { type: "set_thinking_level", level: run.thinkingLevel });
+    if (run.model) post(conn, { type: "set_model", provider: run.model.provider, modelId: run.model.id });
+    if (run.thinkingLevel) post(conn, { type: "set_thinking_level", level: run.thinkingLevel });
   }
   deliver(conn, runMessage(run), undefined, false, conn.browser?.preparePrompt());
   await broadcastSessions();
@@ -535,29 +536,31 @@ function deliver(conn: Live, text: string, images: ImageAttachment[] | undefined
   // The chat shows it once pi starts it (a `user` chunk).
   const request: Extract<BridgeRequest, { type: "prompt" }> = { type: "prompt", text, images, promptId };
   if (steer) request.steer = true;
-  conn.sent++;
-  postInParts(conn.port, request);
+  post(conn, request);
 }
 
+// Queue edits and Stop don't wait their turn, so they can come before the
+// worker knows which chat is open; then there's no bridge to tell.
 export function queueAction({ action, index, text }: QueueAction) {
-  post(chat, { type: "queue_action", action, index, text });
+  if (chat) post(live(chat), { type: "queue_action", action, index, text });
 }
 
 export function abort() {
-  if (chat) live(chat)?.browser?.cancel();
-  post(chat, { type: "abort" });
+  const conn = chat && live(chat);
+  conn?.browser?.cancel();
+  post(conn, { type: "abort" });
 }
 
 export const compact = inOrder(() => {
-  post(chat, { type: "compact" });
+  post(live(chat), { type: "compact" });
 });
 
 export const setModel = inOrder((provider: string, modelId: string) => {
-  post(chat, { type: "set_model", provider, modelId });
+  post(live(chat), { type: "set_model", provider, modelId });
 });
 
 export const setThinkingLevel = inOrder((level: ThinkingLevel) => {
-  post(chat, { type: "set_thinking_level", level });
+  post(live(chat), { type: "set_thinking_level", level });
 });
 
 export async function attachPanel(p: chrome.runtime.Port) {
