@@ -30,8 +30,8 @@ export class ChatView {
   private run: { msg: HTMLElement; working: HTMLElement; timer: number; start: number; tokens: number } | null = null;
   // Text or thinking block the next delta of the same kind appends to.
   private tail: { type: "text" | "thinking"; el: HTMLElement; raw: string } | null = null;
-  // Tool calls of live runs, which later tool chunks update. History's are
-  // finished, so they aren't kept.
+  // Tool calls of the live run, which later tool chunks update. History's
+  // and earlier runs' are finished, so they aren't kept.
   private readonly tools = new Map<string, { card: HTMLElement; call: ToolState }>();
 
   constructor(
@@ -229,6 +229,8 @@ export class ChatView {
   // bridge went away mid-tool), so it shows as failed rather than spinning.
   private settleTools() {
     for (const [id, tool] of this.tools) if (tool.call.status === "running") this.updateTool(id, (call) => ({ ...call, status: "error" }));
+    // Nothing updates them after their run.
+    this.tools.clear();
   }
 
   private updateTool(id: string, change: (call: ToolState) => ToolState) {

@@ -211,8 +211,8 @@ function closeConnection(c: Chat, unanswered: "hand back" | "drop"): Promise<voi
   return disposed;
 }
 
-// To the message box of the open panels if `c` is on screen and one takes it; else held
-// for `c` until a panel shows it.
+// To the message box of the open panels if `c` is on screen and one takes
+// it; else held for `c` until a panel shows it.
 function giveBack(c: Chat, messages: held.Returned) {
   if (!messages.length) return;
   const restore = restoreOf(messages);
