@@ -138,8 +138,11 @@ function toPanel(p: chrome.runtime.Port, update: PanelUpdate): boolean {
   }
 }
 
-function broadcast(update: PanelUpdate) {
-  for (const p of panels) toPanel(p, update);
+// Whether any panel took it.
+function broadcast(update: PanelUpdate): boolean {
+  let taken = false;
+  for (const p of panels) taken = toPanel(p, update) || taken;
+  return taken;
 }
 
 // Shown only while `c` is on screen; a chat off screen is replayed when the
@@ -208,12 +211,12 @@ function closeConnection(c: Chat, unanswered: "hand back" | "drop"): Promise<voi
   return disposed;
 }
 
-// To the message box of the open panels if `c` is on screen; else held
+// To the message box of the open panels if `c` is on screen and one takes it; else held
 // for `c` until a panel shows it.
 function giveBack(c: Chat, messages: held.Returned) {
   if (!messages.length) return;
   const restore = restoreOf(messages);
-  if (c === chat && panels.size && restore) return broadcast({ kind: "restore", ...restore });
+  if (c === chat && restore && broadcast({ kind: "restore", ...restore })) return;
   held.hold(c.meta.id, messages);
 }
 

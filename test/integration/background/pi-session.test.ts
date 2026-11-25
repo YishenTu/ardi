@@ -352,6 +352,14 @@ describe("background pi session", () => {
     expect(bridge().sent).toContainEqual(expect.objectContaining({ type: "prompt", text: "still here" }));
   });
 
+  test("text handed back as the last panel closes, before Chrome says so, waits for the next panel", async () => {
+    await storedChat();
+    panel.disconnected = true;
+    fromBridge({ type: "restore", text: "draft a reply" });
+    const next = await attach();
+    await waitFor(() => expect(updates(next).filter((u) => u.kind === "restore")).toEqual([{ kind: "restore", text: "draft a reply" }]));
+  });
+
   test("held text survives a panel that closes before it's handed over", async () => {
     await pi.prompt("keep me");
     panel.close();
