@@ -23,25 +23,28 @@ type Listener = {
   sessions: (sessions: SessionMeta[], currentId: number, running: number[]) => void;
 };
 
+// The panel's port: connected, or waiting for one (before the first
+// connect, and while reconnecting to a restarted worker). Requests in order
+// wait for `port` instead of being dropped; Stop goes only while connected.
+type Link =
+  | { state: "connected"; port: chrome.runtime.Port }
+  | { state: "waiting"; port: Promise<chrome.runtime.Port>; connected: (port: chrome.runtime.Port) => void };
+
+function waiting(): Link {
+  let connected!: (port: chrome.runtime.Port) => void;
+  const port = new Promise<chrome.runtime.Port>((resolve) => (connected = resolve));
+  return { state: "waiting", port, connected };
+}
+
 // Talks to the pi session in the background service worker. The session
 // outlives the panel; this connection only lasts while the panel is open.
 export class PiClient {
-  private port: chrome.runtime.Port | null = null;
+  private link = waiting();
   // Requests leave in the order they were made, so a prompt still reading
   // its images can't be overtaken by a later prompt or a chat switch.
   private outbox: Promise<void> = Promise.resolve();
-  // The port once connected. While the panel reconnects, queued requests
-  // wait here for the new one instead of being dropped.
-  private connected!: Promise<chrome.runtime.Port>;
-  private onConnected!: (port: chrome.runtime.Port) => void;
 
-  constructor(private on: Listener) {
-    this.awaitPort();
-  }
-
-  private awaitPort() {
-    this.connected = new Promise((resolve) => (this.onConnected = resolve));
-  }
+  constructor(private on: Listener) {}
 
   connect() {
     const port = chrome.runtime.connect({ name: PANEL_PORT });
@@ -76,25 +79,25 @@ export class PiClient {
     }));
     // The service worker restarted; reconnect to the fresh one.
     port.onDisconnect.addListener(() => {
-      this.port = null;
-      this.awaitPort();
+      this.link = waiting();
       setTimeout(() => this.connect(), 500);
     });
-    this.port = port;
-    this.onConnected(port);
+    const { link } = this;
+    this.link = { state: "connected", port };
+    if (link.state === "waiting") link.connected(port);
   }
 
   // A promise is a request still being prepared; null sends nothing. Stop
   // goes at once: it can't wait for a prompt's images.
   send(req: PanelRequest | Promise<PanelRequest | null>) {
     if (!(req instanceof Promise) && req.kind === "abort") {
-      if (this.port) postInParts(this.port, req);
+      if (this.link.state === "connected") postInParts(this.link.port, req);
       return;
     }
     this.outbox = this.outbox
       .then(async () => {
         const ready = await req;
-        if (ready) postInParts(await this.connected, ready);
+        if (ready) postInParts(await this.link.port, ready);
       })
       // A failed request (posted as the port died, say) mustn't block the rest.
       .catch((error: unknown) => console.error("panel request failed:", error));
