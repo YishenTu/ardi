@@ -401,7 +401,8 @@ export async function restart() {
   await ready;
   const c = chat;
   await closeConnection(c, "hand back");
-  await startChat(c);
+  // Left while its browser link closed: the switch already stopped it.
+  if (c === chat) await startChat(c);
 }
 
 // A panel shows `c`: what a scheduled run did there is no longer unread.

@@ -542,6 +542,19 @@ describe("background pi session", () => {
       expect(chromeFake.nativePorts.slice(ports).filter((port) => !port.disconnected)).toHaveLength(1);
     });
 
+    test("a chat left while its old pi's browser link is still closing doesn't get a pi again", async () => {
+      let release!: () => void;
+      const disposed = new Promise<void>((resolve) => (release = resolve));
+      setTarget({ nativeHost: "com.ardi.test", connectBrowser: () => ({ receive() {}, preparePrompt: () => () => {}, cancel() {}, dispose: () => disposed }) });
+      await storedChat();
+      const restarting = pi.restart();
+      await pi.newSession();
+      release();
+      await restarting;
+      const open = chromeFake.nativePorts.filter((port) => !port.disconnected);
+      expect(open.map((port) => port.sent[0])).toEqual([{ type: "start", sessionFile: undefined, piPath: undefined }]);
+    });
+
     test("a chat left right after asking its pi for something keeps its pi until the bridge is done with it", async () => {
       await storedChat();
       const port = bridge();
