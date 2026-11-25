@@ -275,16 +275,16 @@ async function onBridgeEvent(c: Chat, conn: Live, event: Exclude<BridgeEvent, { 
       // The bridge reports the session pi is on; for a new chat that's the
       // first time Ardi learns its file.
       const { meta } = c;
-      if (event.sessionFile !== meta.piSessionFile) {
-        meta.piSessionFile = event.sessionFile;
-        if (!isDraft(meta)) await store.putSession(meta);
-      }
+      const moved = event.sessionFile !== meta.piSessionFile;
+      meta.piSessionFile = event.sessionFile;
       // History is everything pi saved before it started.
       c.history = event.history;
       c.model = lastModel = event.model;
       c.commands = lastCommands = event.commands;
       conn.state = "connected";
       toScreen(c, replay());
+      // Stored last, so nothing above runs after this connection was replaced.
+      if (moved && !isDraft(meta)) await store.putSession(meta);
       break;
     }
     case "busy":
