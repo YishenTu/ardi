@@ -1,4 +1,4 @@
-// Adapted from Claudian (src/providers/pi/normalization/piEventNormalization.ts).
+// Started from Claudian (src/providers/pi/normalization/piEventNormalization.ts).
 // Maps pi RPC events to Ardi chat chunks. Adds run_start/run_end; custom
 // messages, compaction and retries become notices.
 // Tool results carry pi's raw `details`; the panel's ToolCard reads them.
@@ -8,16 +8,16 @@
 import type { ChatChunk, ImageAttachment } from "../../chat";
 import { extractPiToolResultText, extractPiToolTextContent, getRecord, getString, isPlainObject, normalizePiToolInput } from "./piToolNormalization";
 
-export interface PiEventNormalizationState {
-  emittedToolIds: Set<string>;
-  /** Latest native partial-result snapshot per running tool. */
-  toolOutputs: Map<string, string>;
-  /** Running tools whose snapshot stopped extending the text already streamed. */
-  divergedToolOutputIds: Set<string>;
-}
+// Each tool call of the current run, by id, one stage at a time: streaming
+// its output (pi's latest partial-result snapshot), diverged once a snapshot
+// stopped extending what was streamed (the result's text then replaces it),
+// and done once it has a result. Kept until the run settles, so a call is
+// reported once.
+type ToolStage = { stage: "streaming" | "diverged"; output: string } | { stage: "done" };
+export type PiEventNormalizationState = { tools: Map<string, ToolStage> };
 
 export function createPiEventNormalizationState(): PiEventNormalizationState {
-  return { divergedToolOutputIds: new Set(), emittedToolIds: new Set(), toolOutputs: new Map() };
+  return { tools: new Map() };
 }
 
 export function normalizePiRPCEvent(event: Record<string, unknown>, state: PiEventNormalizationState): ChatChunk[] {
@@ -26,6 +26,7 @@ export function normalizePiRPCEvent(event: Record<string, unknown>, state: PiEve
     case "agent_start":
       return [{ type: "run_start", at: Date.now() }];
     case "agent_settled":
+      state.tools.clear();
       return [{ type: "run_end", at: Date.now(), interrupted: event.aborted === true }];
     case "message_update":
       return normalizeMessageUpdate(event);
@@ -124,41 +125,34 @@ function normalizeMessageUpdate(event: Record<string, unknown>): ChatChunk[] {
 
 function normalizeToolUse(event: Record<string, unknown>, state: PiEventNormalizationState): ChatChunk[] {
   const id = getString(event.toolCallId);
-  if (!id || state.emittedToolIds.has(id)) return [];
-  state.emittedToolIds.add(id);
+  if (!id || state.tools.has(id)) return [];
+  state.tools.set(id, { stage: "streaming", output: "" });
   return [{ type: "tool_use", id, name: getString(event.toolName) ?? "tool", input: normalizePiToolInput(event.args) }];
 }
 
+// pi's partialResult is the tool's latest snapshot, but tool_output chunks
+// are appended by consumers. Stream only suffix growth; once a snapshot
+// stops extending the streamed text, wait for tool_result's final text.
 function normalizeToolOutput(event: Record<string, unknown>, state: PiEventNormalizationState): ChatChunk[] {
   const id = getString(event.toolCallId);
-  if (!id) return [];
-  const content = getToolOutputDelta(id, event.partialResult, state);
-  return content ? [{ type: "tool_output", id, content }] : [];
-}
-
-function getToolOutputDelta(id: string, snapshot: unknown, state: PiEventNormalizationState): string {
-  const content = extractPiToolTextContent(snapshot);
-  if (!content) return "";
-  // pi's partialResult is the tool's latest snapshot, but tool_output chunks
-  // are appended by consumers. Stream only suffix growth; once a snapshot
-  // stops extending the streamed text, wait for tool_result's final text.
-  const previous = state.toolOutputs.get(id) ?? "";
-  state.toolOutputs.set(id, content);
-  if (state.divergedToolOutputIds.has(id)) return "";
-  if (!content.startsWith(previous)) {
-    state.divergedToolOutputIds.add(id);
-    return "";
-  }
-  return content.slice(previous.length);
+  const content = extractPiToolTextContent(event.partialResult);
+  if (!id || !content) return [];
+  const tool = state.tools.get(id) ?? { stage: "streaming", output: "" };
+  if (tool.stage === "done") return [];
+  const grows = tool.stage === "streaming" && content.startsWith(tool.output);
+  state.tools.set(id, { stage: grows ? "streaming" : "diverged", output: content });
+  const delta = grows ? content.slice(tool.output.length) : "";
+  return delta ? [{ type: "tool_output", id, content: delta }] : [];
 }
 
 function normalizeToolResult(event: Record<string, unknown>, state: PiEventNormalizationState): ChatChunk[] {
   const id = getString(event.toolCallId);
   if (!id) return [];
-  const result = event.result;
-  const content = result === undefined ? (state.toolOutputs.get(id) ?? "") : extractPiToolResultText(getString(event.toolName) ?? "tool", result);
-  state.toolOutputs.delete(id);
-  state.divergedToolOutputIds.delete(id);
+  const { result } = event;
+  const tool = state.tools.get(id);
+  // Without a result, the last snapshot is the output.
+  const content = result !== undefined ? extractPiToolResultText(getString(event.toolName) ?? "tool", result) : tool && tool.stage !== "done" ? tool.output : "";
+  state.tools.set(id, { stage: "done" });
   const details = isPlainObject(result) ? result.details : undefined;
   return [{ type: "tool_result", id, content, isError: event.isError === true, details }];
 }

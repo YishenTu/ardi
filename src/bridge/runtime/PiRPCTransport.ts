@@ -1,6 +1,8 @@
-// Adapted from Claudian (src/providers/pi/runtime/PiRPCTransport.ts): timers use Node globals instead of
-// window; dropped what Ardi doesn't use (close listeners, abort signals, raw sends); added
-// `onAnswer`, so a caller sees its answer in order with pi's events.
+// Requests to pi's RPC mode (docs/rpc.md) and its events, over its stdin and
+// stdout. Started from Claudian (src/providers/pi/runtime/PiRPCTransport.ts).
+// Reads from the moment it's made, handing every event to one handler, until
+// it's disposed (pi's stdout ended, or its stdin closed or failed); then
+// every pending request fails. `onAnswer` lets a caller see its answer in order with pi's events.
 import type { Readable } from 'node:stream';
 
 import { subscribePiJSONLLines, writePiJSONL } from './PiJSONL';
@@ -16,7 +18,7 @@ export interface PiRPCStreams {
 }
 
 interface PendingRequest {
-  cleanup: () => void;
+  timer?: ReturnType<typeof setTimeout>;
   onAnswer?: (data: unknown) => void;
   reject: (error: Error) => void;
   resolve: (response: unknown) => void;
@@ -26,7 +28,7 @@ interface PendingRequest {
 export class PiRPCTransportClosedError extends Error {
   constructor(message = 'Pi RPC transport closed') {
     super(message);
-    this.name = 'PiRpcTransportClosedError';
+    this.name = 'PiRPCTransportClosedError';
   }
 }
 
@@ -36,16 +38,15 @@ export class PiRPCResponseError extends Error {
     message: string,
   ) {
     super(message);
-    this.name = 'PiRpcResponseError';
+    this.name = 'PiRPCResponseError';
   }
 }
 
 export class PiRPCTransport {
   private disposed = false;
-  private readonly eventHandlers = new Set<PiRPCEventHandler>();
   private nextId = 1;
   private readonly pending = new Map<string, PendingRequest>();
-  private unsubscribeLines?: () => void;
+  private readonly unsubscribeLines: () => void;
   private readonly handleOutputError = (error: unknown): void => {
     this.dispose(error instanceof Error ? error : new Error(String(error)));
   };
@@ -55,36 +56,20 @@ export class PiRPCTransport {
     this.streams.output.off('close', this.handleOutputClose);
   };
 
-  constructor(private readonly streams: PiRPCStreams) {}
-
-  start(): void {
-    if (this.unsubscribeLines || this.disposed) {
-      return;
-    }
-
-    this.streams.output.on('error', this.handleOutputError);
-    this.streams.output.on('close', this.handleOutputClose);
+  constructor(
+    private readonly streams: PiRPCStreams,
+    private readonly onEvent: PiRPCEventHandler,
+  ) {
+    // Kept past dispose(): a write in flight can still fail, and an
+    // unhandled stream error would take the bridge down.
+    streams.output.on('error', this.handleOutputError);
+    streams.output.on('close', this.handleOutputClose);
     this.unsubscribeLines = subscribePiJSONLLines(
-      this.streams.input,
-      (line) => this.#handleLine(line),
-      () => {
-        if (!this.disposed) {
-          this.dispose(new PiRPCTransportClosedError('Pi RPC input closed'));
-        }
-      },
-      (error) => {
-        if (!this.disposed) {
-          this.dispose(error);
-        }
-      },
+      streams.input,
+      (line) => this.handleLine(line),
+      () => this.dispose(new PiRPCTransportClosedError('Pi RPC input closed')),
+      (error) => this.dispose(error),
     );
-  }
-
-  onEvent(handler: PiRPCEventHandler): () => void {
-    this.eventHandlers.add(handler);
-    return () => {
-      this.eventHandlers.delete(handler);
-    };
   }
 
   request<T = unknown>(
@@ -95,30 +80,20 @@ export class PiRPCTransport {
     // it; the returned promise settles only after the whole read.
     onAnswer?: (data: unknown) => void,
   ): Promise<T> {
-    this.start();
     if (this.disposed) {
       return Promise.reject(new PiRPCTransportClosedError());
     }
 
     const id = `req_${this.nextId++}`;
     return new Promise<T>((resolve, reject) => {
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      const cleanup = (): void => {
-        if (timer !== undefined) {
-          clearTimeout(timer);
-        }
-      };
-
-      if (timeoutMs > 0) {
-        timer = setTimeout(() => {
-          this.pending.delete(id);
-          cleanup();
-          reject(new Error(`Request timeout: ${commandType} (${timeoutMs}ms)`));
-        }, timeoutMs);
-      }
+      // 0: no timeout.
+      const timer = timeoutMs > 0 ? setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error(`Request timeout: ${commandType} (${timeoutMs}ms)`));
+      }, timeoutMs) : undefined;
 
       this.pending.set(id, {
-        cleanup,
+        timer,
         onAnswer,
         reject,
         resolve: (response: unknown) => resolve(response as T),
@@ -126,10 +101,10 @@ export class PiRPCTransport {
       });
 
       try {
-        this.#sendRaw({ id, type: commandType, ...payload });
+        writePiJSONL(this.streams.output, { id, type: commandType, ...payload });
       } catch (error) {
         this.pending.delete(id);
-        cleanup();
+        clearTimeout(timer);
         const transportError = error instanceof Error ? error : new Error(String(error));
         this.dispose(transportError);
         reject(transportError);
@@ -140,7 +115,7 @@ export class PiRPCTransport {
   // A record pi answers with nothing, such as an `extension_ui_response`.
   send(record: PiRPCRecord): void {
     if (this.disposed) return;
-    this.#sendRaw(record);
+    writePiJSONL(this.streams.output, record);
   }
 
   dispose(error: Error = new PiRPCTransportClosedError('Pi RPC transport disposed')): void {
@@ -149,19 +124,17 @@ export class PiRPCTransport {
     }
 
     this.disposed = true;
-    // In-flight writes can fail after disposal; own their errors until the output closes.
-    this.unsubscribeLines?.();
-    this.unsubscribeLines = undefined;
-    this.#rejectAllPending(error);
-    this.eventHandlers.clear();
+    this.unsubscribeLines();
+    for (const pending of this.pending.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(error);
+    }
+    this.pending.clear();
   }
 
-  #sendRaw(record: PiRPCRecord): void {
-    writePiJSONL(this.streams.output, record);
-  }
-
-  #handleLine(line: string): void {
-    if (!line.trim()) {
+  private handleLine(line: string): void {
+    // Disposed earlier in the same read (by a handler, say).
+    if (this.disposed || !line.trim()) {
       return;
     }
 
@@ -177,23 +150,21 @@ export class PiRPCTransport {
     }
 
     if (record.type === 'response' && typeof record.id === 'string') {
-      this.#handleResponse(record.id, record);
+      this.handleResponse(record.id, record);
       return;
     }
 
-    for (const handler of this.eventHandlers) {
-      handler(record);
-    }
+    this.onEvent(record);
   }
 
-  #handleResponse(id: string, record: PiRPCRecord): void {
+  private handleResponse(id: string, record: PiRPCRecord): void {
     const pending = this.pending.get(id);
     if (!pending) {
       return;
     }
 
     this.pending.delete(id);
-    pending.cleanup();
+    clearTimeout(pending.timer);
     if (record.success === false) {
       const errorText = typeof record.error === 'string'
         ? record.error
@@ -205,14 +176,6 @@ export class PiRPCTransport {
     const data = 'data' in record ? record.data : record;
     pending.onAnswer?.(data);
     pending.resolve(data);
-  }
-
-  #rejectAllPending(error: Error): void {
-    for (const pending of this.pending.values()) {
-      pending.cleanup();
-      pending.reject(error);
-    }
-    this.pending.clear();
   }
 }
 

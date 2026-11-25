@@ -125,16 +125,14 @@ export class PiSession {
     prepareWorkDir();
     const resumeFile = saved(sessionFile);
     const proc = new PiProcess(buildPiLaunchSpec(this.target, resumeFile, piPath));
-    const transport = new PiRPCTransport({ input: proc.stdout, output: proc.stdin });
-    proc.onClose((error) => this.fail(error ?? new Error("pi exited"), proc.stderrSnapshot));
     const normalization = createPiEventNormalizationState();
-    transport.onEvent((event) => {
+    const transport = new PiRPCTransport({ input: proc.stdout, output: proc.stdin }, (event) => {
       if (this.forwardSchedule(event)) return;
       this.input.observe(event, () => {
         for (const chunk of normalizePiRPCEvent(event, normalization)) this.send({ type: "chunk", chunk });
       });
     });
-    transport.start();
+    proc.onClose((error) => this.fail(error ?? new Error("pi exited"), proc.stderrSnapshot));
     this.phase = { state: "running", process: proc, transport };
 
     const { models } = await transport.request<{ models: Parameters<typeof toModelInfo>[0] }>("get_available_models");

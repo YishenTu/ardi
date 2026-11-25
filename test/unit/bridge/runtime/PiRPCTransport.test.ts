@@ -4,16 +4,15 @@ import { PassThrough } from "node:stream";
 import { PiRPCResponseError, PiRPCTransport, PiRPCTransportClosedError } from "../../../../src/bridge/runtime/PiRPCTransport";
 
 // A transport wired to in-memory streams: `pi` is what pi writes, `sent`
-// collects what the transport wrote to pi.
-function connect() {
+// collects what the transport wrote to pi, `onEvent` gets pi's events.
+function connect(onEvent: (event: Record<string, unknown>) => void = () => {}) {
   const pi = new PassThrough();
   const toPi = new PassThrough();
   const sent: any[] = [];
   toPi.on("data", (chunk: Buffer) => {
     for (const line of chunk.toString("utf8").split("\n").filter(Boolean)) sent.push(JSON.parse(line));
   });
-  const transport = new PiRPCTransport({ input: pi, output: toPi });
-  transport.start();
+  const transport = new PiRPCTransport({ input: pi, output: toPi }, onEvent);
   const write = (record: unknown) => pi.write(`${JSON.stringify(record)}\n`);
   return { pi, sent, transport, write };
 }
@@ -34,9 +33,8 @@ describe("PiRPCTransport", () => {
   });
 
   test("hands a request its answer in order with the events around it, before the request settles", async () => {
-    const { pi, sent, transport } = connect();
     const seen: string[] = [];
-    transport.onEvent((event) => seen.push(String(event.type)));
+    const { pi, sent, transport } = connect((event) => seen.push(String(event.type)));
     const request = transport.request("prompt", {}, 0, () => seen.push("answer"));
     await tick();
     // One read: the answer, then the run it started, start to end.
@@ -59,12 +57,24 @@ describe("PiRPCTransport", () => {
   });
 
   test("passes everything that isn't a response on as events, skipping junk lines", async () => {
-    const { pi, transport } = connect();
     const events: unknown[] = [];
-    transport.onEvent((event) => events.push(event));
+    const { pi } = connect((event) => events.push(event));
     pi.write('{"type":"agent_start"}\nnot json\n[1,2]\n\n{"type":"agent_settled"}\n');
     await tick();
     expect(events).toEqual([{ type: "agent_start" }, { type: "agent_settled" }]);
+  });
+
+  test("once disposed, it hands on nothing more, even later lines of the same read", async () => {
+    const events: unknown[] = [];
+    let transport!: PiRPCTransport;
+    const connected = connect((event) => {
+      events.push(event);
+      transport.dispose();
+    });
+    transport = connected.transport;
+    connected.pi.write('{"type":"agent_start"}\n{"type":"agent_settled"}\n');
+    await tick();
+    expect(events).toEqual([{ type: "agent_start" }]);
   });
 
   test("fails pending requests when pi's output closes", async () => {

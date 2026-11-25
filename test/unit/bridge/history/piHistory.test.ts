@@ -82,6 +82,20 @@ describe("readPiHistory", () => {
     expect(history).toMatchObject([{ role: "user", content: "Second try" }, { role: "assistant", blocks: [{ type: "text", content: "New answer" }] }]);
   });
 
+  test("a tool result on an abandoned branch doesn't attach to the active branch's call", async () => {
+    lastId = null;
+    const file = sessionFile([
+      message("u1", 1000, { role: "user", content: "Run it" }),
+      message("a1", 2000, { role: "assistant", content: [{ type: "toolCall", id: "c1", name: "bash", arguments: { command: "ls" } }] }),
+      message("r1", 3000, { role: "toolResult", toolCallId: "c1", content: [{ type: "text", text: "old result" }], isError: false }),
+      // The user went back to before the result: a new branch from the call.
+      message("u2", 4000, { role: "user", content: "Try again" }, "a1"),
+    ]);
+    const [, reply] = await readPiHistory(file);
+    expect(reply).toMatchObject({ role: "assistant", toolCalls: [{ id: "c1", status: "running" }] });
+    expect(JSON.stringify(reply)).not.toContain("old result");
+  });
+
   test("keeps U+2028 inside messages and skips lines that aren't JSON", async () => {
     lastId = null;
     const file = sessionFile([message("u1", 1000, { role: "user", content: "a b" })], ["{ broken", "[]"]);
