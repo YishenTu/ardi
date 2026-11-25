@@ -1,10 +1,9 @@
-// Adapted from Claudian (src/providers/pi/history/PiHistoryStore.ts).
-// Rebuilds the chat from pi's session file, which is the record of the
-// conversation. Kept: entry parsing, active-branch resolution, message and
-// tool-result mapping. Consecutive assistant entries of one run merge into
-// one message, as live output renders them.
-// Each run also gets its duration, output tokens and whether it was stopped.
-// TODO: branches/fork, subagents (both in Claudian).
+// Rebuilds the chat from pi's session file (docs/session-format.md), which is
+// the record of the conversation. Started from Claudian's PiHistoryStore
+// (src/providers/pi/history/PiHistoryStore.ts); it reads only pi's current
+// format. Consecutive assistant entries of one run merge into one message, as
+// live output renders them. Each run also gets its duration, output tokens
+// and whether it was stopped.
 
 import { readFile } from "node:fs/promises";
 
@@ -13,7 +12,7 @@ import { getPiCustomMessageDisplayText } from "../normalization/piEventNormaliza
 import { extractPiToolResultText, getRecord, getString, isPlainObject, normalizePiToolInput } from "../normalization/piToolNormalization";
 
 interface PiSessionEntry {
-  id?: string;
+  id: string;
   // The entry's message, or the entry itself for entries without one.
   message: Record<string, unknown>;
   parentId?: string;
@@ -25,7 +24,7 @@ export async function readPiHistory(sessionFile: string): Promise<ChatMessage[]>
   const entries: PiSessionEntry[] = [];
   // Split on LF only: U+2028/U+2029 are valid inside JSON strings.
   for (const line of (await readFile(sessionFile, "utf8")).split("\n")) addPiSessionLine(entries, line);
-  return mapPiSessionEntries(resolvePiActivePath(entries));
+  return mapPiSessionEntries(activePath(entries));
 }
 
 function addPiSessionLine(entries: PiSessionEntry[], line: string): void {
@@ -39,9 +38,11 @@ function addPiSessionLine(entries: PiSessionEntry[], line: string): void {
     return;
   }
   const type = getString(record.type) ?? "";
-  if (type === "session") return; // header
+  const id = getString(record.id);
+  // The header (type "session") isn't part of the conversation.
+  if (type === "session" || !id) return;
   entries.push({
-    id: getString(record.id) ?? undefined,
+    id,
     message: getRecord(record.message) ?? record,
     parentId: getString(record.parentId) ?? undefined,
     raw: record,
@@ -59,10 +60,10 @@ function mapPiSessionEntries(entries: PiSessionEntry[]): ChatMessage[] {
     last.completedAt = writtenAt;
     last.durationMs = writtenAt - runStart;
   };
-  for (const [index, entry] of entries.entries()) {
+  for (const entry of entries) {
     const { message } = entry;
     const role = getString(message.role);
-    const id = entry.id ?? `pi-${index}`;
+    const { id } = entry;
     const timestamp = getTimestamp(message.timestamp ?? entry.raw.timestamp);
     // When the entry was written, i.e. when that step finished.
     const writtenAt = getTimestamp(entry.raw.timestamp ?? message.timestamp);
@@ -86,7 +87,7 @@ function mapPiSessionEntries(entries: PiSessionEntry[]): ChatMessage[] {
       if (run?.role === "assistant" && typeof output === "number") run.outputTokens = (run.outputTokens ?? 0) + output;
       if (run?.role === "assistant" && message.stopReason === "aborted") run.interrupted = true;
       extendRun(writtenAt);
-    } else if (isToolResultEntry(entry)) {
+    } else if (role === "toolResult") {
       applyToolResult(messages, entry);
       extendRun(writtenAt);
     } else if (entry.type === "compaction") {
@@ -143,16 +144,8 @@ function extractAssistantToolCalls(value: unknown): ToolCall[] {
   });
 }
 
-function isToolResultEntry(entry: PiSessionEntry): boolean {
-  return getString(entry.message.role) === "toolResult";
-}
-
-function getToolResultCallId(entry: PiSessionEntry): string | null {
-  return getString(entry.message.toolCallId);
-}
-
 function applyToolResult(messages: ChatMessage[], entry: PiSessionEntry): void {
-  const toolCallId = getToolResultCallId(entry);
+  const toolCallId = getString(entry.message.toolCallId);
   if (!toolCallId) return;
   for (let index = messages.length - 1; index >= 0; index--) {
     const message = messages[index];
@@ -167,35 +160,14 @@ function applyToolResult(messages: ChatMessage[], entry: PiSessionEntry): void {
   }
 }
 
-// Active branch: walk from the leaf (last entry) to the root via parentId,
-// keeping tool results that belong to calls on that path.
-function resolvePiActivePath(entries: PiSessionEntry[]): PiSessionEntry[] {
-  const withIds = entries.filter((entry): entry is PiSessionEntry & { id: string } => !!entry.id);
-  if (withIds.length === 0) return entries;
-  const hasBranchGraph = withIds.some((entry) => !!entry.parentId && !isToolResultEntry(entry));
-  if (!hasBranchGraph) return entries;
-
-  const byId = new Map(withIds.map((entry) => [entry.id, entry] as const));
-  const activeIds = new Set<string>();
-  let current: PiSessionEntry | undefined = withIds.at(-1);
-  while (current?.id && !activeIds.has(current.id)) {
-    activeIds.add(current.id);
-    current = current.parentId ? byId.get(current.parentId) : undefined;
-  }
-
-  const activeToolCallIds = new Set<string>();
-  for (const entry of entries) {
-    if (entry.id && activeIds.has(entry.id)) {
-      for (const call of extractAssistantToolCalls(entry.message.content)) activeToolCallIds.add(call.id);
-    }
-  }
-  return entries.filter((entry) => {
-    if (isToolResultEntry(entry)) {
-      const callId = getToolResultCallId(entry);
-      return (!!callId && activeToolCallIds.has(callId)) || (!!entry.id && activeIds.has(entry.id));
-    }
-    return entry.id ? activeIds.has(entry.id) : !!entry.parentId && activeIds.has(entry.parentId);
-  });
+// The active branch: the path from the leaf (the last entry) back to the
+// root through each entry's parentId, in file order. Tool results are
+// entries on it like any other.
+function activePath(entries: PiSessionEntry[]): PiSessionEntry[] {
+  const byId = new Map(entries.map((entry) => [entry.id, entry] as const));
+  const onPath = new Set<string>();
+  for (let entry = entries.at(-1); entry && !onPath.has(entry.id); entry = entry.parentId ? byId.get(entry.parentId) : undefined) onPath.add(entry.id);
+  return entries.filter((entry) => onPath.has(entry.id));
 }
 
 function extractTextContent(value: unknown): string {
