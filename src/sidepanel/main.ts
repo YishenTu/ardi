@@ -1,4 +1,4 @@
-import type { ChatChunk, ModelState } from "../chat";
+import type { ModelState } from "../chat";
 import type { PiStatus, SessionMeta } from "../panel-protocol";
 import { Attachments } from "./Attachments";
 import { ChatView } from "./ChatView";
@@ -33,20 +33,10 @@ const STATUS_TEXT: Record<PiStatus, string> = {
   disconnected: "Not running",
 };
 
-// While pi works, Esc stops it.
-let busy = false;
-
 function setStatus(s: PiStatus) {
   statusDot.dataset.state = s;
   statusDot.title = STATUS_TEXT[s];
   statusText.textContent = STATUS_TEXT[s];
-  if (s === "disconnected") busy = false;
-}
-
-function applyLive(chunk: ChatChunk) {
-  if (chunk.type === "run_start") busy = true;
-  if (chunk.type === "run_end") busy = false;
-  view.applyChunk(chunk);
 }
 
 const dateFormat = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
@@ -87,16 +77,15 @@ const pi = new PiClient({
   replay(history, live) {
     shufflePlaceholder();
     view.clear(history === null);
-    busy = false;
     view.renderHistory(history ?? []);
-    live.forEach(applyLive);
+    for (const chunk of live) view.applyChunk(chunk);
   },
   model: (state) => {
     modelState = state;
     picker.render(state);
   },
   commands: (commands) => slash.setCommands(commands),
-  live: applyLive,
+  live: (chunk) => view.applyChunk(chunk),
   queue: (queue) => queueView.render(queue),
   // Back in the box (a stop, Edit, or rejected by pi), ahead of anything typed since.
   restore(text, images) {
@@ -268,8 +257,8 @@ input.el.addEventListener("input", () => {
 document.addEventListener("selectionchange", () => void tabMenu.update());
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && closeLightbox()) return;
-  // An open menu takes Esc first (it closes itself).
-  if (e.key === "Escape" && busy && !settings.isOpen && !schedule.isOpen && !document.querySelector(":popover-open")) pi.send({ kind: "abort" });
+  // While pi works, Esc stops it. An open menu takes Esc first (it closes itself).
+  if (e.key === "Escape" && view.running && !settings.isOpen && !schedule.isOpen && !document.querySelector(":popover-open")) pi.send({ kind: "abort" });
 });
 $("new").addEventListener("click", () => {
   pi.send({ kind: "new_session" });

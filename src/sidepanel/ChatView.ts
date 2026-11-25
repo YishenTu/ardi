@@ -37,6 +37,11 @@ export class ChatView {
     private readonly empty: HTMLElement,
   ) {}
 
+  // A run is on screen ("Working…"): from its run_start to its run_end.
+  get running(): boolean {
+    return this.run !== null;
+  }
+
   // `loading`: a saved chat whose messages are on their way, so the empty
   // state stays hidden instead of flashing before them.
   clear(loading = false) {
