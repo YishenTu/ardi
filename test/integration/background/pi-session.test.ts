@@ -384,6 +384,24 @@ describe("background pi session", () => {
       expect(last("restore")).toEqual({ kind: "restore", text: "draft a reply" });
     });
 
+    test("when the bridge goes away mid-run, the open panel and a reopened one see the run end and the queue empty", async () => {
+      await working();
+      fromBridge({ type: "queue", queue: [{ text: "later", steer: false }] });
+      bridge().close("Native host has exited.");
+      // Ended, not interrupted: the user didn't stop it, and pi's history won't say so either.
+      expect(last("live")?.chunk).toEqual({ type: "run_end", at: expect.any(Number) });
+      expect(last("queue")).toEqual({ kind: "queue", queue: [] });
+      const replay = last("replay", await attach())!;
+      expect(replay.live.at(-1)).toEqual({ type: "run_end", at: expect.any(Number) });
+      expect(replay.queue).toEqual([]);
+    });
+
+    test("restarting mid-run ends the run on screen", async () => {
+      await working();
+      await pi.restart();
+      expect(last("live")?.chunk).toEqual({ type: "run_end", at: expect.any(Number) });
+    });
+
     test("switching chats shows the next chat's queue, and the left chat's queue when back", async () => {
       const chat = await working();
       fromBridge({ type: "queue", queue: [{ text: "later", steer: false }] });

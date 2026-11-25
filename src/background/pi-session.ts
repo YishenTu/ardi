@@ -180,14 +180,21 @@ function stop(c: Chat) {
   void closeConnection(c, "drop");
 }
 
-// Takes `c`'s bridge down: nothing runs or waits any more, what it hasn't
-// answered goes back to the message box or is dropped, and its browser link
-// is disposed (the returned promise).
+// Takes `c`'s bridge down: nothing runs or waits any more (its run ends and
+// its queue empties on screen too), what it hasn't answered goes back to the
+// message box or is dropped, and its browser link is disposed (the returned
+// promise).
 function closeConnection(c: Chat, unanswered: "hand back" | "drop"): Promise<void> {
   const old = live(c);
   setConnection(c, { state: "down" });
   if (!old) return Promise.resolve();
-  if (old.running) void broadcastSessions();
+  // Ended, not interrupted: that's only for the user's Stop, and pi's history
+  // doesn't mark it either.
+  if (old.running) {
+    pushLive(c, { type: "run_end", at: Date.now() });
+    void broadcastSessions();
+  }
+  if (old.queue.length) toScreen(c, { kind: "queue", queue: [] });
   if (unanswered === "hand back") giveBack(c, [...old.unanswered.values()]);
   old.unanswered.clear();
   const disposed = old.browser?.dispose() ?? Promise.resolve();
