@@ -291,9 +291,12 @@ async function onBridgeEvent(c: Chat, conn: Live, event: Exclude<BridgeEvent, { 
       conn.queue = event.queue;
       toScreen(c, { kind: "queue", queue: conn.queue });
       break;
-    case "restore":
-      giveBack(c, [event]);
+    case "restore": {
+      // The message, not the event: what's held is stored.
+      const { type: _, ...message } = event;
+      giveBack(c, [message]);
       break;
+    }
     case "fatal":
       pushLive(c, { type: "notice", content: event.message, level: "error" });
       giveBack(c, [...conn.unanswered.values()]);

@@ -299,6 +299,8 @@ describe("background pi session", () => {
     await pi.prompt("", images);
     panel.close();
     fromBridge({ type: "fatal", message: "pi not found" });
+    const { id } = (await store.listSessions())[0];
+    await waitFor(() => expect(chromeFake.storage.get("held")).toEqual({ [id]: [{ text: "", images }] }));
     // Chrome may stop the worker before a panel opens again.
     await restartWorker();
     expect(last("restore")).toEqual({ kind: "restore", text: "", images });
@@ -595,7 +597,35 @@ describe("background pi session", () => {
       fromBridge({ type: "restore", text: "draft a reply" }, port);
       busy(false, port);
       expect(port.disconnected).toBe(true);
+      // Stored before the worker goes: a new worker starts with nothing in memory.
+      await waitFor(() => expect(chromeFake.storage.get("held")).toEqual({ [chat.id]: [{ text: "draft a reply" }] }));
       await restartWorker();
+      await pi.switchSession(chat.id);
+      await waitFor(() => expect(last("restore")).toEqual({ kind: "restore", text: "draft a reply" }));
+    });
+
+    test("text held after a storage write that failed still reaches its chat", async () => {
+      const { chat, port } = await leftRunning();
+      const write = chrome.storage.local.set.bind(chrome.storage.local);
+      let failed = false;
+      const failing = spyOn(chrome.storage.local, "set").mockImplementation(async (items: Record<string, unknown>) => {
+        if ("held" in items && !failed) {
+          failed = true;
+          throw new Error("QUOTA_BYTES quota exceeded");
+        }
+        return write(items);
+      });
+      const warn = spyOn(console, "warn").mockImplementation(() => undefined);
+      try {
+        fromBridge({ type: "restore", text: "lost" }, port);
+        fromBridge({ type: "restore", text: "draft a reply" }, port);
+        await waitFor(() => expect(chromeFake.storage.get("held")).toEqual({ [chat.id]: [{ text: "draft a reply" }] }));
+        expect(warn).toHaveBeenCalled();
+      } finally {
+        failing.mockRestore();
+        warn.mockRestore();
+      }
+      busy(false, port);
       await pi.switchSession(chat.id);
       await waitFor(() => expect(last("restore")).toEqual({ kind: "restore", text: "draft a reply" }));
     });

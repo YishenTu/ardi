@@ -14,7 +14,8 @@ const KEY = "held";
 let queue: Promise<void> = Promise.resolve();
 
 // Runs `change` on what's held, in turn; it returns what to store, or
-// nothing to leave it as it is.
+// nothing to leave it as it is. A change that fails (storage full, say) is
+// lost, but the ones after it still run.
 function update(change: (held: Held) => Held | undefined): Promise<void> {
   queue = queue
     .then(async () => {
@@ -22,7 +23,8 @@ function update(change: (held: Held) => Held | undefined): Promise<void> {
       const next = change(held as Held);
       if (next) await chrome.storage.local.set({ [KEY]: next });
     })
-    .catch(() => undefined);
+    // Not the text itself: it's the user's.
+    .catch((error: unknown) => console.warn("held text not saved:", error instanceof Error ? error.message : String(error)));
   return queue;
 }
 
