@@ -1,4 +1,6 @@
-// Copied from Claudian (src/providers/pi/runtime/PiJSONL.ts).
+// pi's JSONL: one JSON value per LF-terminated line (U+2028/U+2029 can sit
+// inside JSON strings, so nothing else splits). Started from Claudian
+// (src/providers/pi/runtime/PiJSONL.ts).
 import type { Writable } from 'node:stream';
 import { StringDecoder } from 'node:string_decoder';
 
@@ -28,7 +30,9 @@ export function subscribePiJSONLLines(
     lines.push(decoder.write(typeof chunk === 'string' ? Buffer.from(chunk) : chunk), onLine);
   };
 
+  // Streams emit `end`, then `close` (or only `close`): the rest is read once.
   const handleEnd = (): void => {
+    stopReading();
     lines.push(decoder.end(), onLine);
     if (lines.bufferedLength > 0) onLine(lines.take());
     onEnd?.();
@@ -43,10 +47,13 @@ export function subscribePiJSONLLines(
   input.on('close', handleEnd);
   input.on('error', handleError);
 
-  return () => {
+  const stopReading = (): void => {
     input.off('data', handleData);
     input.off('end', handleEnd);
     input.off('close', handleEnd);
+  };
+  return () => {
+    stopReading();
     input.off('error', handleError);
   };
 }
