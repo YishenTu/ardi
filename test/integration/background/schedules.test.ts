@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, spyOn, test } from "bun:test";
 
 import { chromeFake, FakePort } from "../../support/chrome";
 import { waitFor } from "../../support/wait";
+import { joinParts } from "../../../src/parts";
 import type { BridgeEvent } from "../../../src/bridge/protocol";
 import type { PanelUpdate } from "../../../src/panel-protocol";
 import * as schedules from "../../../src/background/schedules";
@@ -26,7 +27,14 @@ beforeEach(async () => {
 
 const bridge = () => chromeFake.nativePorts.at(-1)!;
 const fromBridge = (event: BridgeEvent, to = bridge()) => to.receive(event);
-const received = (port: FakePort) => port.sent.filter((r: { type: string }) => !r.type.endsWith("_reply")).length;
+// Like the host: messages, not their parts, and not replies to pi's tools.
+function received(port: FakePort): number {
+  let count = 0;
+  port.sent.forEach(joinParts<{ type: string }>((r) => {
+    if (!r.type.endsWith("_reply")) count++;
+  }));
+  return count;
+}
 const idle = (to = bridge()) => fromBridge({ type: "busy", busy: false, requests: received(to) }, to);
 const MODEL = { models: [], current: { provider: "fake", id: "m2" }, thinkingLevel: "high" as const };
 

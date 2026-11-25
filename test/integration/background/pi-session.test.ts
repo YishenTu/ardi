@@ -49,7 +49,14 @@ const fromBridge = (event: BridgeEvent, to = bridge()) => to.receive(event);
 const chunk = (chunk: ChatChunk, to = bridge()) => fromBridge({ type: "chunk", chunk }, to);
 // The bridge reports pi working or input waiting, or nothing left to do,
 // with how many requests it had received (all of them, unless given).
-const received = (port: FakePort) => port.sent.filter((r: { type: string }) => r.type !== "browser_reply" && r.type !== "schedule_reply").length;
+// Like the host: messages, not their parts, and not replies to pi's tools.
+function received(port: FakePort): number {
+  let count = 0;
+  port.sent.forEach(joinParts<{ type: string }>((r) => {
+    if (r.type !== "browser_reply" && r.type !== "schedule_reply") count++;
+  }));
+  return count;
+}
 const busy = (value: boolean, to = bridge(), requests = received(to)) => fromBridge({ type: "busy", busy: value, requests }, to);
 const ready = (sessionFile?: string, history: ChatMessage[] = [], to = bridge()) =>
   fromBridge({ type: "ready", sessionFile, history, model: { models: [] }, commands: [] }, to);
@@ -72,6 +79,25 @@ async function storedChat(file = SESSION_FILE) {
 }
 
 describe("background pi session", () => {
+  test("if the worker can't read which chat was open, every ordered request fails, not just the first", async () => {
+    chromeFake.storage.set("currentChat", 1);
+    const read = chromeFake.storage.get.bind(chromeFake.storage);
+    const failing = spyOn(chromeFake.storage, "get").mockImplementation((key: string) => {
+      if (key === "currentChat") throw new Error("storage unavailable");
+      return read(key);
+    });
+    const errors = spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const fresh = (await import(`../../../src/background/pi-session.ts?copy=${copies++}`)) as Background;
+      const [first, second] = [fresh.newSession(), fresh.prompt("hello")];
+      await expect(first).rejects.toThrow("storage unavailable");
+      await expect(second).rejects.toThrow("storage unavailable");
+    } finally {
+      failing.mockRestore();
+      errors.mockRestore();
+    }
+  });
+
   test("a panel that attaches gets the current chat replayed", () => {
     expect(updates()[0]).toMatchObject({ kind: "replay", status: "disconnected", session: { id: 0, title: "" }, history: [], live: [] });
     expect(updates()[1]).toEqual({ kind: "sessions", sessions: [], currentId: 0, running: [] });
@@ -334,6 +360,7 @@ describe("background pi session", () => {
     await waitFor(() => expect(chromeFake.storage.get("held")).toEqual({ [id]: [{ text: "keep me" }] }));
     // The panel closes while the held text is read from storage.
     const brief = new FakePort("panel");
+    chromeFake.storage.set("currentChat", 1);
     const read = chromeFake.storage.get.bind(chromeFake.storage);
     const reading = spyOn(chromeFake.storage, "get").mockImplementation((key: string) => {
       if (key === "held") brief.close();
