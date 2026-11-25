@@ -125,8 +125,21 @@ function setConnection(c: Chat, next: Connection) {
   toScreen(c, { kind: "status", status: status(c) });
 }
 
+// Posts to panel `p`; false if it's gone. Chrome reports a closed panel
+// only later, and posting to it meanwhile throws: it's dropped instead, so
+// it can't interrupt what the background is doing.
+function toPanel(p: chrome.runtime.Port, update: PanelUpdate): boolean {
+  try {
+    postInParts(p, update);
+    return true;
+  } catch {
+    panels.delete(p);
+    return false;
+  }
+}
+
 function broadcast(update: PanelUpdate) {
-  for (const p of panels) postInParts(p, update);
+  for (const p of panels) toPanel(p, update);
 }
 
 // Shown only while `c` is on screen; a chat off screen is replayed when the
@@ -209,8 +222,7 @@ function giveBack(c: Chat, messages: held.Returned) {
 function handOver(to?: chrome.runtime.Port): Promise<void> {
   return held.handOver(() => chat.meta.id, (restore) => {
     const ports = to ? [to].filter((p) => panels.has(p)) : [...panels];
-    for (const p of ports) postInParts(p, { kind: "restore", ...restore });
-    return ports.length > 0;
+    return ports.filter((p) => toPanel(p, { kind: "restore", ...restore })).length > 0;
   });
 }
 

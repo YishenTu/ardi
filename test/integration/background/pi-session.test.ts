@@ -130,6 +130,15 @@ describe("background pi session", () => {
     expect(last("replay")).toMatchObject({ status: "connected", history: HISTORY, commands: [{ name: "skill:demo" }], live: [] });
   });
 
+  test("a panel closing as pi reports its session file doesn't keep the file from being saved", async () => {
+    await pi.prompt("hello");
+    await waitFor(async () => expect(await store.listSessions()).toHaveLength(1));
+    // Gone, but Chrome hasn't told the worker yet: posting to it throws.
+    panel.disconnected = true;
+    ready(SESSION_FILE);
+    await waitFor(async () => expect((await store.listSessions())[0].piSessionFile).toBe(SESSION_FILE));
+  });
+
   test("a session file pi reports while the first message is being stored is kept", async () => {
     // The bridge answers `start` while the new chat is being written.
     // oxlint-disable-next-line typescript/unbound-method -- called below with the store as `this`
