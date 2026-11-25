@@ -112,6 +112,7 @@ export class ChatView {
         break;
       case "run_end": {
         this.endTail();
+        this.settleTools();
         const run = this.endRun();
         if (!run) break;
         // A stopped run keeps its message, even empty, for the indicator.
@@ -153,7 +154,8 @@ export class ChatView {
     for (const block of blocks) {
       if (block.type === "tool_use") {
         const call = toolCalls.find((c) => c.id === block.toolId);
-        if (call) msg.append(this.trackTool(call));
+        // A saved call with no result never finished.
+        if (call) msg.append(this.trackTool(call.status === "running" ? { ...call, status: "error" } : call));
       } else if (block.type === "text") {
         msg.append(textBlock(block.content));
       } else {
@@ -219,6 +221,12 @@ export class ChatView {
     const card = toolCard(call);
     this.tools.set(call.id, { card, call });
     return card;
+  }
+
+  // Tools end with their run: one still running then never finished (the
+  // bridge went away mid-tool), so it shows as failed rather than spinning.
+  private settleTools() {
+    for (const [id, tool] of this.tools) if (tool.call.status === "running") this.updateTool(id, (call) => ({ ...call, status: "error" }));
   }
 
   private updateTool(id: string, change: (call: ToolState) => ToolState) {
