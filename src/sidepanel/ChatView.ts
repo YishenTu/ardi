@@ -30,6 +30,8 @@ export class ChatView {
   private run: { msg: HTMLElement; working: HTMLElement; timer: number; start: number; tokens: number } | null = null;
   // Text or thinking block the next delta of the same kind appends to.
   private tail: { type: "text" | "thinking"; el: HTMLElement; raw: string } | null = null;
+  // Tool calls of live runs, which later tool chunks update. History's are
+  // finished, so they aren't kept.
   private readonly tools = new Map<string, { card: HTMLElement; call: ToolState }>();
 
   constructor(
@@ -155,7 +157,7 @@ export class ChatView {
       if (block.type === "tool_use") {
         const call = toolCalls.find((c) => c.id === block.toolId);
         // A saved call with no result never finished.
-        if (call) msg.append(this.trackTool(call.status === "running" ? { ...call, status: "error" } : call));
+        if (call) msg.append(toolCard(call.status === "running" ? { ...call, status: "error" } : call));
       } else if (block.type === "text") {
         msg.append(textBlock(block.content));
       } else {
