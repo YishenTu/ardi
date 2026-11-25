@@ -85,6 +85,12 @@ describe("tools", () => {
     expect(normalize(start, start)).toEqual([{ type: "tool_use", id: "t1", name: "bash", input: { command: "ls" } }]);
   });
 
+  test("a tool call id pi uses again in a later run is reported again", () => {
+    const start = { type: "tool_execution_start", toolCallId: "t1", toolName: "bash", args: {} };
+    const chunks = normalize(start, { type: "agent_settled" }, start);
+    expect(chunks.filter((chunk) => chunk.type === "tool_use")).toHaveLength(2);
+  });
+
   test("partial results stream as appended output", () => {
     const update = (text: string) => ({ type: "tool_execution_update", toolCallId: "t1", partialResult: { content: [{ type: "text", text }] } });
     expect(normalize(update("a"), update("ab"), update("abc"))).toEqual([

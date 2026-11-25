@@ -64,6 +64,19 @@ describe("PiRPCTransport", () => {
     expect(events).toEqual([{ type: "agent_start" }, { type: "agent_settled" }]);
   });
 
+  test("once disposed, it hands on nothing more, even later lines of the same read", async () => {
+    const events: unknown[] = [];
+    let transport!: PiRPCTransport;
+    const connected = connect((event) => {
+      events.push(event);
+      transport.dispose();
+    });
+    transport = connected.transport;
+    connected.pi.write('{"type":"agent_start"}\n{"type":"agent_settled"}\n');
+    await tick();
+    expect(events).toEqual([{ type: "agent_start" }]);
+  });
+
   test("fails pending requests when pi's output closes", async () => {
     const { pi, transport } = connect();
     const request = transport.request("get_state");

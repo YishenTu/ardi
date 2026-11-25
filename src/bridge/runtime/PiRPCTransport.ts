@@ -133,7 +133,8 @@ export class PiRPCTransport {
   }
 
   private handleLine(line: string): void {
-    if (!line.trim()) {
+    // Disposed earlier in the same read (by a handler, say).
+    if (this.disposed || !line.trim()) {
       return;
     }
 
