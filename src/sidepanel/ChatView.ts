@@ -30,12 +30,19 @@ export class ChatView {
   private run: { msg: HTMLElement; working: HTMLElement; timer: number; start: number; tokens: number } | null = null;
   // Text or thinking block the next delta of the same kind appends to.
   private tail: { type: "text" | "thinking"; el: HTMLElement; raw: string } | null = null;
+  // Tool calls of the live run, which later tool chunks update. History's
+  // and earlier runs' are finished, so they aren't kept.
   private readonly tools = new Map<string, { card: HTMLElement; call: ToolState }>();
 
   constructor(
     private readonly root: HTMLElement,
     private readonly empty: HTMLElement,
   ) {}
+
+  // A run is on screen ("Working…"): from its run_start to its run_end.
+  get running(): boolean {
+    return this.run !== null;
+  }
 
   // `loading`: a saved chat whose messages are on their way, so the empty
   // state stays hidden instead of flashing before them.
@@ -107,6 +114,7 @@ export class ChatView {
         break;
       case "run_end": {
         this.endTail();
+        this.settleTools();
         const run = this.endRun();
         if (!run) break;
         // A stopped run keeps its message, even empty, for the indicator.
@@ -148,7 +156,8 @@ export class ChatView {
     for (const block of blocks) {
       if (block.type === "tool_use") {
         const call = toolCalls.find((c) => c.id === block.toolId);
-        if (call) msg.append(this.trackTool(call));
+        // A saved call with no result never finished.
+        if (call) msg.append(toolCard(call.status === "running" ? { ...call, status: "error" } : call));
       } else if (block.type === "text") {
         msg.append(textBlock(block.content));
       } else {
@@ -214,6 +223,14 @@ export class ChatView {
     const card = toolCard(call);
     this.tools.set(call.id, { card, call });
     return card;
+  }
+
+  // Tools end with their run: one still running then never finished (the
+  // bridge went away mid-tool), so it shows as failed rather than spinning.
+  private settleTools() {
+    for (const [id, tool] of this.tools) if (tool.call.status === "running") this.updateTool(id, (call) => ({ ...call, status: "error" }));
+    // Nothing updates them after their run.
+    this.tools.clear();
   }
 
   private updateTool(id: string, change: (call: ToolState) => ToolState) {

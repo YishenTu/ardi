@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, spyOn, test } from "bun:test";
 
 import { chromeFake, FakePort } from "../../support/chrome";
 import { waitFor } from "../../support/wait";
+import { joinParts } from "../../../src/parts";
 import type { BridgeEvent } from "../../../src/bridge/protocol";
 import type { PanelUpdate } from "../../../src/panel-protocol";
 import * as schedules from "../../../src/background/schedules";
@@ -26,7 +27,14 @@ beforeEach(async () => {
 
 const bridge = () => chromeFake.nativePorts.at(-1)!;
 const fromBridge = (event: BridgeEvent, to = bridge()) => to.receive(event);
-const received = (port: FakePort) => port.sent.filter((r: { type: string }) => !r.type.endsWith("_reply")).length;
+// Like the host: messages, not their parts, and not replies to pi's tools.
+function received(port: FakePort): number {
+  let count = 0;
+  port.sent.forEach(joinParts<{ type: string }>((r) => {
+    if (!r.type.endsWith("_reply")) count++;
+  }));
+  return count;
+}
 const idle = (to = bridge()) => fromBridge({ type: "busy", busy: false, requests: received(to) }, to);
 const MODEL = { models: [], current: { provider: "fake", id: "m2" }, thinkingLevel: "high" as const };
 
@@ -130,6 +138,22 @@ describe("scheduled jobs", () => {
     await schedules.saveJob({ ...job, paused: true });
     expect(await schedules.due(queued)).toBeUndefined();
     expect(chromeFake.nativePorts).toHaveLength(0);
+  });
+
+  test("a paused one-time job outlives its time, through a queued alarm and a browser restart, and still can't resume", async () => {
+    const job = await schedules.saveJob({ title: "Renew", prompt: "renew", when: { kind: "once", at: Date.now() + 60_000 } });
+    const queued = chromeFake.alarms.get(`job:${job.id}`)!;
+    await schedules.saveJob({ ...job, paused: true });
+    expect(await schedules.due(queued)).toBeUndefined();
+    const later = spyOn(Date, "now").mockReturnValue(job.next + 1);
+    try {
+      await schedules.rearm();
+      expect(await schedules.scheduledJobs()).toMatchObject([{ id: job.id, paused: true }]);
+      expect(armed()).toEqual([]);
+      await expect(schedules.saveJob({ ...job, paused: false })).rejects.toThrow(/passed/);
+    } finally {
+      later.mockRestore();
+    }
   });
 
   test("jobs saved in the earlier pre-release layout are left alone, never run", async () => {
@@ -259,6 +283,12 @@ describe("pi's schedule_job tool", () => {
     expect((await tool({ op: "list" })).result).toMatchObject([{ id: jobs[0].id, title: "Inbox" }, { title: "Renew" }]);
     await tool({ op: "cancel", id: jobs[0].id });
     expect((await schedules.scheduledJobs()).map((j) => j.title)).toEqual(["Renew"]);
+  });
+
+  test("lists a paused job with no next run", async () => {
+    await storedChat();
+    const job = await schedules.saveJob({ title: "Desk", prompt: "check price", when: { kind: "daily", time: "09:00" }, paused: true });
+    expect((await tool({ op: "list" })).result).toEqual([{ id: job.id, title: "Desk", when: expect.any(String), next: null, paused: true }]);
   });
 
   test("it and the Scheduled view list only jobs, not check-backs", async () => {

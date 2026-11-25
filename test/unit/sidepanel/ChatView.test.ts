@@ -91,6 +91,12 @@ describe("a live run", () => {
     expect(card.querySelector(".tool-output pre")!.textContent).toBe("1\n2\n3");
   });
 
+  test("a tool that never finished stops showing as running once its run ends", () => {
+    // The bridge went away mid-tool: no result ever comes.
+    play({ type: "run_start", at: 0 }, { type: "tool_use", id: "t1", name: "bash", input: { command: "sleep 99" } }, { type: "run_end", at: 500 });
+    expect(reply().querySelector<HTMLElement>(".tool")!.dataset.status).toBe("error");
+  });
+
   test("a stopped run folds everything under Interrupted, even with no output", () => {
     play({ type: "run_start", at: 0 }, { type: "run_end", at: 500, interrupted: true });
     expect(reply().querySelector(".work .interrupted")!.textContent).toBe("Interrupted");
@@ -123,6 +129,17 @@ describe("history", () => {
     expect(msg.querySelector(".work > summary")!.textContent).toBe("Worked for 4s");
     expect(msg.querySelector(".tool .step-arg")!.textContent).toBe("1 tab");
     expect(root.querySelector(".msg.notice.info")!.textContent).toBe("Context compacted.");
+  });
+
+  test("a saved tool call with no result doesn't show as running", () => {
+    view.renderHistory([
+      {
+        role: "assistant", id: "a", timestamp: 1000, completedAt: 2000, durationMs: 1000,
+        blocks: [{ type: "tool_use", toolId: "c1" }],
+        toolCalls: [{ id: "c1", name: "bash", input: { command: "sleep 99" }, status: "running" }],
+      },
+    ]);
+    expect(reply().querySelector<HTMLElement>(".tool")!.dataset.status).toBe("error");
   });
 
   test("a message's tab mentions show as chips linking to the tab", () => {

@@ -164,7 +164,7 @@ export class PiInput {
   private async send(message: Message, promptId?: string): Promise<void> {
     const text = message.text || (message.images?.length ? " " : "");
     const images = message.images?.map((image) => ({ type: "image", ...image }));
-    this.queue.sending(message.images);
+    this.queue.sending({ images: message.images });
     // No timeout: pi answers a prompt that starts a run only once the run
     // is prepared (which can include compacting), and only its answer says
     // whether it will run. If pi dies first, the extension hands it back.
@@ -227,15 +227,15 @@ class QueueTracker {
   private steering: string[] = [];
   private followUp: string[] = [];
   private images = new Map<string, (ImageAttachment[] | undefined)[]>();
-  // Images of the message being sent; the next text pi adds is it.
-  private pending: ImageAttachment[] | undefined | null = null;
+  // The message being sent, if any: the next text pi adds is it.
+  private pending: { images?: ImageAttachment[] } | null = null;
 
   get list(): QueuedMessage[] {
     return asList(this.steering, this.followUp);
   }
 
-  sending(images: ImageAttachment[] | undefined | null): void {
-    this.pending = images;
+  sending(message: { images?: ImageAttachment[] } | null): void {
+    this.pending = message;
   }
 
   update(steering: string[], followUp: string[]): QueuedMessage[] {
@@ -273,8 +273,8 @@ class QueueTracker {
       const pool = this.images.get(k) ?? [];
       const change = (now.get(text) ?? 0) - (was.get(text) ?? 0);
       if (change < 0) pool.splice(0, -change);
-      if (change > 0 && this.pending !== null) {
-        pool.push(this.pending);
+      if (change > 0 && this.pending) {
+        pool.push(this.pending.images);
         this.pending = null;
       }
       if (pool.length) this.images.set(k, pool);
