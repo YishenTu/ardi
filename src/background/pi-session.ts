@@ -5,6 +5,7 @@ import { restoreOf } from "../restore";
 import { joinParts, postInParts } from "../parts";
 import type { PanelUpdate, PiStatus, SessionMeta } from "../panel-protocol";
 import { runMessage, type Scheduled } from "../schedule";
+import * as held from "./held";
 import * as schedules from "./schedules";
 import { loadSettings } from "./settings";
 import * as store from "./store";
@@ -49,9 +50,6 @@ type Live = {
 };
 type Connection = { state: "down" } | { state: "starting"; started: Promise<void> } | Live;
 
-// Text and images for the message box.
-type Returned = { text: string; images?: ImageAttachment[] }[];
-
 // A chat and what its pi reported: the stored chat, pi's history for it
 // (null while it loads), and what pi sent since.
 type Chat = {
@@ -69,11 +67,6 @@ let chat: Chat;
 // a chat that finishes off screen stops it then.
 const away = new Set<Chat>();
 
-// Text for a chat's message box that no panel showing that chat could take
-// (none open, or the chat is off screen), by chat id, until one can. In
-// chrome.storage.local: Chrome may stop the worker meanwhile.
-const HELD = "held";
-type Held = Record<string, Returned>;
 // The last model and commands pi reported, shown for a chat until its own pi
 // is up.
 let lastModel: ModelState = { models: [] };
@@ -204,46 +197,21 @@ function closeConnection(c: Chat, unanswered: "hand back" | "drop"): Promise<voi
 
 // To the message box of the open panels if `c` is on screen; else held
 // for `c` until a panel shows it.
-let holding: Promise<void> = Promise.resolve();
-function giveBack(c: Chat, messages: Returned) {
+function giveBack(c: Chat, messages: held.Returned) {
   if (!messages.length) return;
   const restore = restoreOf(messages);
   if (c === chat && panels.size && restore) return broadcast({ kind: "restore", ...restore });
-  const id = c.meta.id;
-  holding = holding.then(async () => {
-    const { [HELD]: held = {} } = await chrome.storage.local.get(HELD);
-    const all = held as Held;
-    await chrome.storage.local.set({ [HELD]: { ...all, [id]: [...(all[id] ?? []), ...messages] } });
-  });
+  held.hold(c.meta.id, messages);
 }
 
-// Hands what's held for the chat on screen to panel `to`, or to every open
-// panel. It's handed over before it's cleared from storage, while that chat is
-// known to be on screen, and stays held if no panel took it.
+// Hands what's held for the chat on screen (when its turn comes) to panel
+// `to`, or to every open panel; it stays held if no panel took it.
 function handOver(to?: chrome.runtime.Port): Promise<void> {
-  holding = holding
-    .then(async () => {
-      const { [HELD]: held = {} } = await chrome.storage.local.get(HELD);
-      const { [chat.meta.id]: mine, ...rest } = held as Held;
-      const restore = mine && restoreOf(mine);
-      const ports = to ? [to].filter((p) => panels.has(p)) : [...panels];
-      if (!restore || !ports.length) return;
-      for (const p of ports) postInParts(p, { kind: "restore", ...restore });
-      await chrome.storage.local.set({ [HELD]: rest });
-    })
-    .catch(() => undefined);
-  return holding;
-}
-
-// Drops what's held for a deleted chat.
-function dropHeld(id: number) {
-  holding = holding
-    .then(async () => {
-      const { [HELD]: held = {} } = await chrome.storage.local.get(HELD);
-      const { [id]: _, ...rest } = held as Held;
-      await chrome.storage.local.set({ [HELD]: rest });
-    })
-    .catch(() => undefined);
+  return held.handOver(() => chat.meta.id, (restore) => {
+    const ports = to ? [to].filter((p) => panels.has(p)) : [...panels];
+    for (const p of ports) postInParts(p, { kind: "restore", ...restore });
+    return ports.length > 0;
+  });
 }
 
 // Requests the bridge counts (`sent`): all but replies to pi's tools.
@@ -446,7 +414,7 @@ export const switchSession = inOrder(async (id: number) => {
 
 export const deleteSession = inOrder(async (id: number) => {
   await store.deleteSession(id);
-  dropHeld(id);
+  held.drop(id);
   await schedules.dropCheckBack(id);
   for (const c of away) {
     if (c.meta.id !== id) continue;
