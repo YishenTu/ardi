@@ -285,6 +285,12 @@ describe("pi's schedule_job tool", () => {
     expect((await schedules.scheduledJobs()).map((j) => j.title)).toEqual(["Renew"]);
   });
 
+  test("lists a paused job with no next run", async () => {
+    await storedChat();
+    const job = await schedules.saveJob({ title: "Desk", prompt: "check price", when: { kind: "daily", time: "09:00" }, paused: true });
+    expect((await tool({ op: "list" })).result).toEqual([{ id: job.id, title: "Desk", when: expect.any(String), next: null, paused: true }]);
+  });
+
   test("it and the Scheduled view list only jobs, not check-backs", async () => {
     await storedChat();
     await tool({ op: "check_back", at: Date.now() + 60_000, note: "later" });

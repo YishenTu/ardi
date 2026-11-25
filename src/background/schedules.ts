@@ -180,7 +180,8 @@ function summary(job: Job) {
     id: job.id,
     title: job.title,
     when: describeWhen(job.when),
-    next: new Date(job.next).toString(),
+    // A paused job has no next run; resuming it works one out.
+    next: job.paused ? null : new Date(job.next).toString(),
     paused: job.paused,
   };
 }
