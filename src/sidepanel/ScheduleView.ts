@@ -1,6 +1,6 @@
 import type { ModelState, ThinkingLevel } from "../chat";
 import { describeWhen, type Job, type JobDraft, type When } from "../schedule";
-import { deleteButton, el } from "./dom";
+import { el } from "./dom";
 import { LEVEL_NAMES } from "./ModelPicker";
 import { askBackground } from "./pi";
 
@@ -17,6 +17,7 @@ const DAY_NUMBERS = [1, 2, 3, 4, 5, 6, 0];
 
 const PAUSE_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5v7M10 4.5v7" /></svg>';
 const RESUME_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 4 11.5 8l-6 4z" /></svg>';
+const CLOCK_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5" /><path d="M8 5v3l2 1.5" /></svg>';
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const dateValue = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -127,7 +128,8 @@ export class ScheduleView {
     const job = form ? mode.job : undefined;
     this.listView.hidden = form;
     this.form.hidden = !form;
-    this.heading.textContent = !form ? "Scheduled" : job ? "Job" : "New job";
+    // The form's big title field heads it instead.
+    this.heading.hidden = form;
     this.newButton.hidden = form;
     this.pauseButton.hidden = this.deleteButton.hidden = !job;
   }
@@ -143,28 +145,30 @@ export class ScheduleView {
     this.list.replaceChildren(...this.jobs.map((job) => this.row(job)));
   }
 
+  // A card: title and on/off switch, when in words, the prompt's start, and
+  // model and effort as chips. Clicking it (not the switch) opens it to edit.
   private row(job: Job): HTMLElement {
-    const row = el("div", `row job${job.paused ? " paused" : ""}`);
+    const row = el("div", `card job${job.paused ? " paused" : ""}`);
     row.addEventListener("click", () => this.edit(job));
-    const text = row.appendChild(el("div", "row-text"));
-    text.append(el("span", "row-name", job.title), el("span", "row-desc", this.summary(job)));
-    const actions = row.appendChild(el("div", "job-actions"));
-    const pause = actions.appendChild(el("button", "icon-btn"));
-    pause.type = "button";
-    pause.title = job.paused ? "Resume" : "Pause";
-    pause.innerHTML = job.paused ? RESUME_ICON : PAUSE_ICON;
-    pause.addEventListener("click", (e) => {
+    const top = row.appendChild(el("div", "job-top"));
+    const toggle = el("button", "switch");
+    toggle.type = "button";
+    toggle.setAttribute("role", "switch");
+    toggle.setAttribute("aria-checked", String(!job.paused));
+    toggle.title = job.paused ? "Resume" : "Pause";
+    toggle.addEventListener("click", (e) => {
       e.stopPropagation();
       void this.togglePause(job);
     });
-    actions.append(deleteButton("chat-delete job-delete", "Delete job", () => void this.remove(job.id).then(() => this.showList())));
-    return row;
-  }
-
-  // "Weekdays 09:00 · Opus 5.5 · High"
-  private summary(job: Job): string {
+    top.append(el("span", "row-name", job.title), toggle);
+    const when = row.appendChild(el("div", "job-when"));
+    when.innerHTML = CLOCK_ICON;
+    when.append(describeWhen(job.when));
+    row.append(el("div", "job-prompt", job.prompt));
     const model = job.model && (this.models().models.find((m) => modelKey(m) === modelKey(job.model))?.name ?? job.model.id);
-    return [describeWhen(job.when), model, job.thinkingLevel && LEVEL_NAMES[job.thinkingLevel]].filter(Boolean).join(" · ");
+    const chips = [model, job.thinkingLevel && LEVEL_NAMES[job.thinkingLevel]].filter((c): c is string => !!c);
+    if (chips.length) row.appendChild(el("div", "chips")).append(...chips.map((c) => el("span", "chip", c)));
+    return row;
   }
 
   // A job that can't resume (its one time has passed) opens with the reason.

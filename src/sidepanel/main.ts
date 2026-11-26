@@ -27,6 +27,9 @@ const chatList = $("chat-list");
 
 const view = new ChatView($("history"), $("empty"));
 
+// The composer floats over the conversation; keep room for it at the end.
+new ResizeObserver(() => document.body.style.setProperty("--composer-h", `${form.offsetHeight}px`)).observe(form);
+
 const STATUS_TEXT: Record<PiStatus, string> = {
   connected: "Running",
   connecting: "Starting…",

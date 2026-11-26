@@ -52,11 +52,26 @@ beforeEach(() => {
 });
 
 describe("Scheduled view", () => {
-  test("lists each job by title with when, model and effort in words", async () => {
+  test("lists each job as a card: title, when in words, its prompt, and model and effort", async () => {
     await view.open();
     expect(rows()).toHaveLength(1);
-    expect(rows()[0].textContent).toContain("Invoice check");
-    expect(rows()[0].textContent).toContain("Weekdays 09:00 · Haiku 5.5 · Low");
+    const text = (cls: string) => [...rows()[0].querySelectorAll(cls)].map((n) => n.textContent);
+    expect(text(".row-name")).toEqual(["Invoice check"]);
+    expect(text(".job-when")).toEqual(["Weekdays 09:00"]);
+    expect(text(".job-prompt")).toEqual(["find invoices"]);
+    expect(text(".chip")).toEqual(["Haiku 5.5", "Low"]);
+  });
+
+  test("a job's switch pauses and resumes it from the list, without opening it", async () => {
+    await view.open();
+    const toggle = () => rows()[0].querySelector<HTMLButtonElement>("[role=switch]")!;
+    expect(toggle().getAttribute("aria-checked")).toBe("true");
+    toggle().click();
+    await waitFor(() => expect(toggle().getAttribute("aria-checked")).toBe("false"));
+    expect(jobs[0].paused).toBe(true);
+    expect($("job-form").hidden).toBe(true);
+    toggle().click();
+    await waitFor(() => expect(jobs[0].paused).toBe(false));
   });
 
   test("a new job defaults to the current model and effort, and saves what the user filled in", async () => {
@@ -84,9 +99,10 @@ describe("Scheduled view", () => {
     expect(field<HTMLSelectElement>("job-model").value).toBe("p/haiku");
     $("job-pause").click();
     await waitFor(() => expect(jobs[0].paused).toBe(true));
-    rows()[0].querySelector<HTMLButtonElement>(".job-delete")!.click();
-    rows()[0].querySelector<HTMLButtonElement>(".job-delete")!.click();
+    rows()[0].click();
+    $("job-delete").click();
     await waitFor(() => expect(jobs).toEqual([]));
+    expect($("job-form").hidden).toBe(true);
   });
 
   test("a job missing its title or prompt isn't saved", async () => {
@@ -113,7 +129,7 @@ describe("Scheduled view", () => {
   test("a job the background refuses to resume opens with the reason", async () => {
     jobs = [{ kind: "job", id: "j1", title: "Renew", prompt: "renew", when: { kind: "once", at: Date.now() - 60_000 }, paused: true, next: Date.now() - 60_000 }];
     await view.open();
-    rows()[0].querySelector<HTMLButtonElement>("button[title=Resume]")!.click();
+    rows()[0].querySelector<HTMLButtonElement>("[role=switch]")!.click();
     await waitFor(() => expect($("job-error").textContent).toBe("That time has already passed"));
     expect($("job-form").hidden).toBe(false);
     expect(field<HTMLInputElement>("job-title").value).toBe("Renew");

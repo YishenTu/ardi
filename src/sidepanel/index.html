@@ -11,7 +11,6 @@
     <header class="bar">
       <button class="chat-title" id="chats-toggle" popovertarget="chats" aria-label="Chats">
         <span class="chat-title-text" id="title">New chat</span>
-        <svg class="chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5" /></svg>
       </button>
       <button class="icon-btn" id="schedule-open" title="Scheduled" aria-label="Scheduled">
         <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5" /><path d="M8 5v3l2 1.5" /></svg>
@@ -24,7 +23,7 @@
       </button>
     </header>
 
-    <div class="chats" id="chats" popover>
+    <div class="chats glass" id="chats" popover>
       <ul class="chat-list" id="chat-list"></ul>
     </div>
 
@@ -42,10 +41,10 @@
     </main>
 
     <form class="composer" id="composer">
-      <div class="dropup" id="slash" role="listbox" hidden></div>
-      <div class="dropup" id="tab-menu" role="listbox" hidden></div>
+      <div class="dropup glass" id="slash" role="listbox" hidden></div>
+      <div class="dropup glass" id="tab-menu" role="listbox" hidden></div>
       <div class="options-tip" id="options-tip" role="tooltip"></div>
-      <div class="field">
+      <div class="field glass">
         <div class="drop-hint" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M8 10.5V3M5 6l3-3 3 3M3 10.5v2h10v-2" /></svg>Drop images to attach</div>
         <div class="queue" id="queue" hidden></div>
         <div class="attachments" id="attachments" hidden></div>
@@ -58,54 +57,52 @@
       </div>
     </form>
 
-    <div class="options" id="options" popover></div>
+    <div class="options glass" id="options" popover></div>
 
     <div class="lightbox" id="lightbox" hidden><img alt="" /></div>
 
     <section class="settings schedule" id="schedule" hidden>
       <header class="bar">
-        <button class="icon-btn" id="schedule-back" title="Back" aria-label="Back">
+        <button class="icon-btn glass" id="schedule-back" title="Back" aria-label="Back">
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9.5 4 5.5 8l4 4" /></svg>
         </button>
-        <h2 id="schedule-heading">Scheduled</h2>
-        <button class="icon-btn" id="job-new" title="New job" aria-label="New job">
+        <button class="icon-btn glass" id="job-new" title="New job" aria-label="New job">
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9" /></svg>
         </button>
-        <button class="icon-btn" id="job-pause" title="Pause" aria-label="Pause or resume" hidden></button>
-        <button class="icon-btn" id="job-delete" title="Delete" aria-label="Delete" hidden>
+        <button class="icon-btn glass" id="job-pause" title="Pause" aria-label="Pause or resume" hidden></button>
+        <button class="icon-btn glass" id="job-delete" title="Delete" aria-label="Delete" hidden>
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 4.5h9M6.5 4.5V3h3v1.5M5 4.5l.5 8h5l.5-8" /></svg>
         </button>
       </header>
       <div class="settings-body">
+        <h2 class="sheet-title" id="schedule-heading">Scheduled</h2>
         <div id="job-list-view">
-          <div class="group" id="job-list"></div>
+          <div class="job-list" id="job-list"></div>
           <p class="job-empty">No scheduled jobs. Add one with +, or ask Ardi in a chat.</p>
         </div>
         <form id="job-form" hidden>
-          <section class="settings-section">
-            <h3><label for="job-title">Title</label></h3>
-            <input class="text-input job-input" id="job-title" type="text" autocomplete="off" placeholder="Name this job" />
-          </section>
-          <section class="settings-section">
-            <h3><label for="job-prompt">Prompt</label></h3>
-            <textarea class="text-input job-input" id="job-prompt" rows="4" placeholder="What should Ardi do?"></textarea>
-          </section>
+          <input class="title-input" id="job-title" type="text" autocomplete="off" aria-label="Title" placeholder="Name this job" />
+          <div class="group">
+            <textarea class="prompt-input" id="job-prompt" rows="4" aria-label="Prompt" placeholder="What should Ardi do?"></textarea>
+          </div>
           <section class="settings-section">
             <h3>When</h3>
-            <div class="group"><div class="row stack">
-              <div class="effort" id="job-kind" role="radiogroup" aria-label="How often"></div>
-              <div class="days" id="job-days" role="group" aria-label="Days"></div>
-              <label class="field-row"><span>Date</span><input class="text-input" id="job-date" type="date" /></label>
-              <label class="field-row"><span>Every</span><span><input class="text-input" id="job-every" type="number" min="1" /> hours</span></label>
-              <label class="field-row"><span>Time</span><input class="text-input" id="job-time" type="time" /></label>
-            </div></div>
+            <div class="group">
+              <div class="row stack">
+                <div class="effort" id="job-kind" role="radiogroup" aria-label="How often"></div>
+                <div class="days" id="job-days" role="group" aria-label="Days"></div>
+              </div>
+              <label class="row field-row"><span>Date</span><input class="text-input" id="job-date" type="date" /></label>
+              <label class="row field-row"><span>Every</span><span><input class="text-input" id="job-every" type="number" min="1" /> hours</span></label>
+              <label class="row field-row"><span>Time</span><input class="text-input" id="job-time" type="time" /></label>
+            </div>
           </section>
           <section class="settings-section">
-            <h3><label for="job-model">Model</label></h3>
-            <div class="group"><div class="row stack">
-              <select class="text-input" id="job-model"></select>
-              <div class="effort" id="job-effort" role="radiogroup" aria-label="Effort"></div>
-            </div></div>
+            <h3>Model</h3>
+            <div class="group">
+              <label class="row field-row"><span>Model</span><select class="text-input" id="job-model"></select></label>
+              <div class="row stack"><div class="effort" id="job-effort" role="radiogroup" aria-label="Effort"></div></div>
+            </div>
           </section>
           <div class="job-cta"><p class="check" id="job-error" data-state="error"></p><button type="submit" class="btn primary" id="job-save">Create</button></div>
         </form>
@@ -114,44 +111,41 @@
 
     <section class="settings" id="settings" hidden>
       <header class="bar">
-        <button class="icon-btn" id="settings-close" title="Back" aria-label="Back">
+        <button class="icon-btn glass" id="settings-close" title="Back" aria-label="Back">
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9.5 4 5.5 8l4 4" /></svg>
         </button>
-        <h2>Settings</h2>
       </header>
       <div class="settings-body">
-        <section class="settings-section">
-          <h3>Agent</h3>
-          <div class="group">
-            <div class="row">
-              <button type="button" class="row-text row-toggle" id="pi-toggle" aria-expanded="false" aria-controls="pi-path-row" title="CLI path">
-                <span class="row-name">Pi <span class="version" id="pi-version"></span><svg class="chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 4.5 10 8l-3.5 3.5" /></svg></span>
-                <span class="row-desc pi-status"><span class="dot" id="status" data-state="disconnected"></span><span id="status-text">Not running</span></span>
-              </button>
-              <button type="button" class="btn" id="restart">Restart</button>
+        <h2 class="sheet-title">Settings</h2>
+        <div class="group">
+          <div class="row">
+            <span class="dot" id="status" data-state="disconnected"></span>
+            <div class="row-text">
+              <span class="row-name">Pi <span class="version" id="pi-version"></span></span>
+              <span class="row-desc" id="status-text">Not running</span>
             </div>
-            <div class="row stack" id="pi-path-row" hidden>
-              <div class="row-text">
-                <label class="row-name" for="pi-path">CLI path</label>
-                <span class="row-desc">Leave empty to use the Pi found by <code>host:install</code>. Saving restarts Pi.</span>
-              </div>
-              <input class="text-input" id="pi-path" type="text" spellcheck="false" autocomplete="off" />
-              <p class="check" id="pi-check"></p>
-            </div>
+            <button type="button" class="btn" id="restart">Restart</button>
           </div>
-        </section>
+          <button type="button" class="row row-toggle" id="pi-toggle" aria-expanded="false" aria-controls="pi-path-row">
+            <span class="row-name">CLI path</span>
+            <svg class="chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 4.5 10 8l-3.5 3.5" /></svg>
+          </button>
+          <div class="row stack" id="pi-path-row" hidden>
+            <label class="row-desc" for="pi-path">Leave empty to use the Pi found by <code>host:install</code>. Saving restarts Pi.</label>
+            <input class="text-input" id="pi-path" type="text" spellcheck="false" autocomplete="off" />
+            <p class="check" id="pi-check"></p>
+          </div>
+        </div>
         <section class="settings-section">
           <h3>Make it yours</h3>
           <div class="group">
             <div class="row">
-              <span class="row-icon"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5h5.5L12 5v8.5H4z" /><path d="M9.5 2.5V5H12M6 8h4M6 10.5h4" /></svg></span>
               <div class="row-text">
                 <span class="row-name">Instructions</span>
                 <span class="row-desc">Tell Ardi how you like things in <code>~/.ardi/AGENTS.md</code>. Changes apply from your next new chat.</span>
               </div>
             </div>
             <div class="row">
-              <span class="row-icon"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5c.4 2.7 1.8 4.1 4.5 4.5-2.7.4-4.1 1.8-4.5 4.5-.4-2.7-1.8-4.1-4.5-4.5 2.7-.4 4.1-1.8 4.5-4.5zM12.5 2v2.5M11.25 3.25h2.5" /></svg></span>
               <div class="row-text">
                 <span class="row-name">Skills</span>
                 <span class="row-desc">Add skill folders to <code>~/.ardi/.agents/skills/</code>. New ones show up in your next new chat.</span>
