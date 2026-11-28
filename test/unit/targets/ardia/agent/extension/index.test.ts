@@ -35,6 +35,7 @@ function answer(line) {
   if (cmd === "tab" && arg === "list") return { tabs: TABS };
   if (cmd === "tab" && arg === "active") return tab(TABS[1]);
   if (cmd === "tab" && arg !== "close") fs.writeFileSync(USED, JSON.stringify({ ...used(), [session]: arg }));
+  if (cmd === "tab" && !TABS.some((t) => t.tabId === arg)) throw Object.assign(new Error("No tab " + arg), { code: "tab_not_found", remedy: "ardia browse tab list" });
   if (cmd === "tab") return tab(TABS.find((t) => t.tabId === arg));
   if (cmd === "eval") return { result: "Text of the page" };
   throw new Error("unexpected " + cmd);
@@ -45,7 +46,7 @@ if (argv[0] === "windows") {
   const lines = fs.readFileSync(0, "utf8").split("\n").filter(Boolean);
   if (process.env.FAKE_ARDIA_BUSY) {
     // Errors outside any one command (daemon start, a busy session) aren't per line.
-    console.log(JSON.stringify({ success: false, data: null, error: "session_busy: another command is running" }));
+    console.log(JSON.stringify({ success: false, data: null, error: "Another command is running", code: "session_busy" }));
     process.exit(1);
   } else if (argv.includes("--json")) {
     // --bail: the first failure stops the rest, a last close included.
@@ -54,7 +55,8 @@ if (argv[0] === "windows") {
       if (steps.some((s) => !s.success)) { steps.push({ command, success: false, result: null, error: "not_run" }); continue; }
       if (command[0] === "close") { fs.writeFileSync(USED, JSON.stringify({ ...used(), [session]: undefined })); steps.push({ command, success: true, result: { closed: true }, error: null }); continue; }
       try { steps.push({ command, success: true, result: answer(command), error: null }); }
-      catch (e) { steps.push({ command, success: false, result: null, error: e.message }); }
+      // Since 0.7.0 a failure also names its code and, when one command fixes it, that command.
+      catch (e) { steps.push({ command, success: false, result: null, error: e.message, ...(e.code ? { code: e.code, remedy: e.remedy } : {}) }); }
     }
     console.log(JSON.stringify(steps));
     process.exit(steps.every((s) => s.success) ? 0 : 1);
@@ -157,9 +159,15 @@ ardiaTest("each chat drives the browser in its own session", async () => {
   expect(b).not.toBe(a1);
 });
 
+ardiaTest("a failed read tells the agent the error's code and the command that fixes it", async () => {
+  const failed = await tools.read_tab.execute("1", { id: "t9" }).catch((error: Error) => error.message);
+  expect(failed).toContain("No tab t9 (tab_not_found)");
+  expect(failed).toContain("remedy: ardia browse tab list");
+});
+
 ardiaTest("an error from the CLI itself reaches the agent as it is", async () => {
   process.env.FAKE_ARDIA_BUSY = "1";
-  await expect(tools.read_tab.execute("1", {})).rejects.toThrow("session_busy: another command is running");
+  await expect(tools.read_tab.execute("1", {})).rejects.toThrow("Another command is running (session_busy)");
 });
 
 // Pi runs the tools in its own process: a CLI that stops reading its input

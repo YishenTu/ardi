@@ -53,7 +53,11 @@ function ardia(args: string[], opts: { session?: string; input?: string; signal?
 // A failed save prints the whole result before its error: cap it like output.
 const failure = (run: Run, fallback: string) => new ArdiaError(truncate(`${run.stdout}\n${run.stderr}`.trim()) || fallback);
 
-type Step = { success: boolean; result: unknown; error: string | null };
+// Since CLI 0.7.0 a failure names its code and, when one command fixes it,
+// that command (`remedy`), as its text output does.
+type Step = { success: boolean; result: unknown; error: string | null; code?: string; remedy?: string };
+
+const stepError = (s: Step) => `${s.error || "The command failed."}${s.code ? ` (${s.code})` : ""}${s.remedy ? `\nremedy: ${s.remedy}` : ""}`;
 
 // Runs browse commands (each an argv) in order in one call, stopping at the
 // first failure, and returns each command's `--json` data.
@@ -66,9 +70,12 @@ async function browse(lines: string[][], opts: { session: string; flags?: string
     throw failure(run, UNREACHABLE);
   }
   // Errors before any command ran (the daemon, a busy session) come as one object.
-  if (!Array.isArray(answer)) throw new ArdiaError((answer as { error?: string }).error || failure(run, UNREACHABLE).message);
+  if (!Array.isArray(answer)) {
+    const error = answer as Step;
+    throw new ArdiaError(error.error ? stepError(error) : failure(run, UNREACHABLE).message);
+  }
   const failed = (answer as Step[]).find((s) => !s.success);
-  if (failed) throw new ArdiaError(failed.error ?? "The command failed.");
+  if (failed) throw new ArdiaError(stepError(failed));
   return (answer as Step[]).map((s) => s.result);
 }
 
@@ -220,7 +227,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "ardia_exec",
     label: "Run in browser",
-    description: `Run ardia browse commands (agent-browser's command line) in the user's browser, for anything the other tools don't cover: snapshot, click, fill, select, press, wait, scroll, screenshot, eval, reading many pages, site notes. One command per line, run in order in one call; it stops at the first failure. The browser section of your instructions explains how to use it. With script, code is JavaScript for ardia browse script instead (loops over pages; ardia browse script --help lists its API). To act on Ardia itself (organizing tabs and groups; its commands such as new window, split pane or select tab; settings, shortcuts and themes that should last; userscripts that change how a site looks or behaves on every visit; hooks that run on tab and window events; browsing history and pinned tabs; anything else in the browser or profile through ardia methods and ardia call), read ${resolve(import.meta.dirname, "../references/ardia-app.md")} and use the ardia command in bash.`,
+    description: `Run ardia browse commands (agent-browser's command line) in the user's browser, for anything the other tools don't cover: snapshot, click, fill, select, press, wait, scroll, screenshot, eval, reading many pages, site notes. One command per line, run in order in one call; it stops at the first failure. The browser section of your instructions explains how to use it. With script, code is JavaScript for ardia browse script instead (loops over pages; ardia browse script --help lists its API). To act on Ardia itself (organizing tabs and groups; its commands such as new window, split pane or select tab; settings, shortcuts and themes that should last; userscripts that change how a site looks or behaves on every visit; hooks that run on tab and window events; browsing history and pinned tabs; anything else in the browser or profile through ardia methods and ardia call), read ${resolve(import.meta.dirname, "../references/ardia-app.md")} and use the ardia command in bash. Rarer browse commands (the page's own tools and Markdown, flows that replay page actions, signing in, debugging a page, sites the ad blocker blocks) are in ${resolve(import.meta.dirname, "../references/browse.md")}.`,
     parameters: Type.Object({
       code: Type.String({ description: "ardia browse commands, one per line, without the `ardia browse` prefix (shell quoting, e.g. fill @e3 \"Ana Ruiz\"); or JavaScript when script is true" }),
       script: Type.Optional(Type.Boolean({ description: "Run code as an ardia browse script (JavaScript) instead of commands" })),
