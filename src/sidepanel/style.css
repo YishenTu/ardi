@@ -158,8 +158,7 @@ body > .bar .icon-btn:hover { background: none; }
   display: flex;
   flex-direction: column;
   gap: 18px;
-  scrollbar-width: thin;
-  scrollbar-color: var(--line) transparent;
+  scrollbar-width: none;
 }
 
 .empty { margin: auto 0; padding-bottom: 12vh; }
