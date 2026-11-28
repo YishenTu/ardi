@@ -79,17 +79,26 @@ test("both distributions build and install without overwriting each other", asyn
         const registered: { name: string; description: string }[] = [];
         expect(realpathSync.native(extension)).toBe(realpathSync.native(join(out, "agent/extension")));
         const { default: register } = await import(join(extension, "index.js"));
-        register({ on() {}, registerTool(tool: { name: string; description: string }) { registered.push(tool); } });
+        // Prompt sections the extension adds before each run, as pi would collect them.
+        const sections: Record<string, string> = {};
+        const on = (event: string, handler: (e: { systemPromptOptions: { sections: Record<string, string> } }) => void) => {
+          if (event !== "before_agent_start") return;
+          const e = { systemPromptOptions: { sections: {} as Record<string, string> } };
+          handler(e);
+          Object.assign(sections, e.systemPromptOptions.sections);
+        };
+        register({ on, registerTool(tool: { name: string; description: string }) { registered.push(tool); } });
         const enabled = args[args.indexOf("--tools") + 1].split(",");
         expect(enabled).toEqual(expect.arrayContaining(registered.map(t => t.name)));
         expect(registered.map(t => t.name)).toContain(target === "chrome" ? "browser_exec" : "ardia_exec");
         expect(enabled).not.toContain(target === "chrome" ? "ardia_exec" : "browser_exec");
         // The path as pi loads the extension (Windows may spell `out` in 8.3 form).
         const reference = join(extension, "..", "references", target === "chrome" ? "chrome.md" : "ardia-app.md");
-        // Every reference a tool description points pi at ships with the build.
+        // Every reference a tool description or prompt section points pi at ships with the build.
         const references = join(extension, "..", "references");
         // Split on the directory itself: the path may contain spaces.
-        const named = registered.flatMap(t => t.description.split(references + sep).slice(1).map(rest => join(references, rest.match(/^[\w.-]+\.md/)?.[0] ?? rest)));
+        const texts = [...registered.map(t => t.description), ...Object.values(sections)];
+        const named = texts.flatMap(text => text.split(references + sep).slice(1).map(rest => join(references, rest.match(/^[\w.-]+\.md/)?.[0] ?? rest)));
         expect(named).toContain(reference);
         for (const path of named) expect(existsSync(path)).toBe(true);
         expect(existsSync(join(home, ".ardi/references"))).toBe(false);
