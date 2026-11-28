@@ -6,7 +6,7 @@ Commands and details for ardia_exec beyond the browser section of your instructi
 
 - Selectors take CSS, `@e3`, `text=Save`, `role=button[name="Save"]`, `li:has-text("Ana")` and `li >> nth=2`. A plain label, name or placeholder works as the selector for fill, select, check and uncheck (`fill "Full name" "Ana Ruiz"`).
 - A line can carry its own flags (`click @e10 --no-changes`).
-- To look without acting: `find role button text --name Save` or `find role button is visible --name Save`. `find label "Terms" is checked` checks a box's state. `snapshot find <query | /pattern/>` prints matching snapshot lines with 3 lines around each and where they sit.
+- To look without acting: `find role button text --name Save` or `find role button is visible --name Save`. `find label "Terms" is checked` checks a box's state, and `is visible|enabled|checked <sel>` checks any element's. `snapshot find <query | /pattern/>` prints matching snapshot lines with 3 lines around each and where they sit.
 - `snapshot -i -u` adds link URLs; `snapshot -i --full` lists everything again instead of only what changed.
 
 ## Fields and moves

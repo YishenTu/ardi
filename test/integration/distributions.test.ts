@@ -101,6 +101,14 @@ test("both distributions build and install without overwriting each other", asyn
         const named = texts.flatMap(text => text.split(references + sep).slice(1).map(rest => join(references, rest.match(/^[\w.-]+\.md/)?.[0] ?? rest)));
         expect(named).toContain(reference);
         for (const path of named) expect(existsSync(path)).toBe(true);
+        // The browser section lists its references one per line, "- <path>: when to read it".
+        // Found without assuming their directory, so a resolver aimed elsewhere fails too.
+        const listed = [...Object.values(sections).join("\n").matchAll(/^- (.+\.md): /gm)].map(m => m[1]);
+        if (target === "ardia") expect(listed.length).toBeGreaterThan(0);
+        for (const path of listed) {
+          expect(path.startsWith(references + sep)).toBe(true);
+          expect(existsSync(path)).toBe(true);
+        }
         expect(existsSync(join(home, ".ardi/references"))).toBe(false);
       } finally { child.stdin.end(); await exited; }
 

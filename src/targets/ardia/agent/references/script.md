@@ -56,7 +56,7 @@ return state.rows;
 ## Failures and limits
 
 - A failed command throws (`err.code`, `err.message`): wrap each item in try/catch to keep going past failures and return what failed. Uncaught, the script stops and names the line.
-- It also stops after any command whose outcome is unknown, and at its timeout (ardia_exec's `timeout`, at most 600 seconds). Give a slow multi-page script a long timeout: killed, it prints nothing.
+- It also stops after any command whose outcome is unknown, and at its timeout (ardia_exec's `timeout`, 90 seconds by default, at most 600). Give a slow multi-page script a long timeout. A stopped script returns no value: its answer lists the calls that ran, with ✓ or ✗, and `state` keeps what you pushed. Read both and check the page before resuming, and don't redo a step whose outcome is unknown.
 
 ## A site's public API
 

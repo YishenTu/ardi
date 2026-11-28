@@ -1,6 +1,6 @@
 # When ardia browse doesn't do what you expected
 
-A failure ends with its code in brackets, `(stale_ref)`, and when one command fixes it, a `remedy:` line naming that command. The browser section of your instructions says where to run a remedy. These are the cases it doesn't cover.
+A failure ends with its code in brackets, `(stale_ref)`, and when one command fixes it, a `remedy:` line naming that command. The browser section of your instructions says where to run a remedy. These are the cases it doesn't cover. Flow errors (`flow_not_get`, `drifted`, `flow_step_failed`, `heal_rejected`) are in flows.md, beside this file.
 
 ## Input and elements
 
